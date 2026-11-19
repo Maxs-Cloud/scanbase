@@ -80,7 +80,7 @@ public class ModelDownloader {
             httpURLConnection.setRequestProperty("Range", "bytes=" + length + "-");
         }
         int responseCode = httpURLConnection.getResponseCode();
-        boolean z2 = 0;
+        boolean z2 = false;
         boolean z3 = responseCode == 206;
         if (responseCode != 200 && responseCode != 206) {
             httpURLConnection.disconnect();
@@ -101,7 +101,7 @@ public class ModelDownloader {
         long j4 = 0;
         while (!this.cancelled && (i = inputStream2.read(bArr)) > 0) {
             try {
-                fileOutputStream.write(bArr, z2, i);
+                fileOutputStream.write(bArr, 0, i);
                 long j5 = ((long) i) + length;
                 if (j5 - j4 > 3000000 || (j > 0 && j5 >= j)) {
                     inputStream = inputStream2;
@@ -124,9 +124,9 @@ public class ModelDownloader {
                 j4 = j2;
                 length = j5;
                 z = true;
-                z2 = 0;
+                z2 = false;
             } catch (Throwable th2) {
-                th = th2;
+                Throwable th = th2;
                 inputStream = inputStream2;
             }
         }
@@ -143,31 +143,16 @@ public class ModelDownloader {
         return str.replaceAll("^https?://", "").replaceAll("/.*", "");
     }
 
-    private void postDone(final Callback callback, final String str) {
-        this.ui.post(new Runnable() { // from class: ru.scanbase.ModelDownloader$$ExternalSyntheticLambda0
-            @Override // java.lang.Runnable
-            public final void run() {
-                callback.onDone(str);
-            }
-        });
+    private void postDone(Callback callback, String str) {
+        this.ui.post(new ModelDownloader$$ExternalSyntheticLambda0(callback, str));
     }
 
-    private void postFail(final Callback callback, final String str) {
-        this.ui.post(new Runnable() { // from class: ru.scanbase.ModelDownloader$$ExternalSyntheticLambda1
-            @Override // java.lang.Runnable
-            public final void run() {
-                callback.onFail(str);
-            }
-        });
+    private void postFail(Callback callback, String str) {
+        this.ui.post(new ModelDownloader$$ExternalSyntheticLambda1(callback, str));
     }
 
-    private void postProgress(final Callback callback, final long j, final long j2) {
-        this.ui.post(new Runnable() { // from class: ru.scanbase.ModelDownloader$$ExternalSyntheticLambda2
-            @Override // java.lang.Runnable
-            public final void run() {
-                callback.onProgress(j, j2);
-            }
-        });
+    private void postProgress(Callback callback, long j, long j2) {
+        this.ui.post(new ModelDownloader$$ExternalSyntheticLambda2(callback, j, j2));
     }
 
     public void cancel() {
@@ -179,17 +164,12 @@ public class ModelDownloader {
         return thread != null && thread.isAlive();
     }
 
-    public void start(final Context context, final Callback callback) {
+    public void start(Context context, Callback callback) {
         if (running()) {
             return;
         }
         this.cancelled = false;
-        Thread thread = new Thread(new Runnable() { // from class: ru.scanbase.ModelDownloader$$ExternalSyntheticLambda3
-            @Override // java.lang.Runnable
-            public final void run() {
-                this.f$0.lambda$start$0(context, callback);
-            }
-        }, "model-download");
+        Thread thread = new Thread(new ModelDownloader$$ExternalSyntheticLambda3(this, context, callback), "model-download");
         this.thread = thread;
         thread.start();
     }

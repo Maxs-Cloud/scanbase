@@ -13,7 +13,6 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.CookieManager;
-import android.webkit.ValueCallback;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -30,7 +29,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -52,7 +50,7 @@ public class MainActivity extends Activity {
     private FrameLayout content;
     private SQLiteDatabase db;
     private TextView error;
-    private List lastItems;
+    private List<Item> lastItems;
     private JSONObject lastJson;
     private List nameIdx;
     private Button pageButton;
@@ -254,6 +252,7 @@ public class MainActivity extends Activity {
         private Row() {
             this.law = new ArrayList();
         }
+
     }
 
     static class ShowPieceTask implements Runnable {
@@ -384,12 +383,7 @@ public class MainActivity extends Activity {
         Button button = new Button(this);
         button.setAllCaps(false);
         button.setTextSize(13.0f);
-        button.setOnClickListener(new View.OnClickListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda9
-            @Override // android.view.View.OnClickListener
-            public final void onClick(View view) {
-                this.f$0.lambda$buildAiPanel$0(view);
-            }
-        });
+        button.setOnClickListener(new MainActivity$$ExternalSyntheticLambda9(this));
         this.aiButton = button;
         linearLayout2.addView(button, wrap());
         ScrollView scrollView = new ScrollView(this);
@@ -438,12 +432,7 @@ public class MainActivity extends Activity {
         String str9;
         ArrayList arrayList;
         int i4 = i;
-        Collections.sort(list, new Comparator() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda7
-            @Override // java.util.Comparator
-            public final int compare(Object obj, Object obj2) {
-                return MainActivity.lambda$buildHtml$0((MainActivity.Item) obj, (MainActivity.Item) obj2);
-            }
-        });
+        Collections.sort(list, new MainActivity$$ExternalSyntheticLambda7());
         String strDetectCategory = detectCategory(str, list);
         int size = list.size();
         int i5 = size - i4;
@@ -875,24 +864,14 @@ public class MainActivity extends Activity {
         button.setText("Разбор");
         button.setAllCaps(false);
         button.setTextSize(13.0f);
-        button.setOnClickListener(new View.OnClickListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda10
-            @Override // android.view.View.OnClickListener
-            public final void onClick(View view) {
-                this.f$0.lambda$buildTabs$0(view);
-            }
-        });
+        button.setOnClickListener(new MainActivity$$ExternalSyntheticLambda10(this));
         this.tabRead = button;
         linearLayout2.addView(button, tabSlot());
         Button button2 = new Button(this);
         button2.setText("Отзыв ИИ");
         button2.setAllCaps(false);
         button2.setTextSize(13.0f);
-        button2.setOnClickListener(new View.OnClickListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda11
-            @Override // android.view.View.OnClickListener
-            public final void onClick(View view) {
-                this.f$0.lambda$buildTabs$1(view);
-            }
-        });
+        button2.setOnClickListener(new MainActivity$$ExternalSyntheticLambda11(this));
         this.tabAi = button2;
         linearLayout2.addView(button2, tabSlot());
         linearLayout.addView(linearLayout2, match());
@@ -1188,12 +1167,7 @@ public class MainActivity extends Activity {
         this.urlBox.setText(stringExtra.trim());
         open();
         if ("1".equals(intent.getStringExtra("scanbase_ai"))) {
-            this.urlBox.post(new Runnable() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda13
-                @Override // java.lang.Runnable
-                public final void run() {
-                    this.f$0.lambda$handleIntent$0();
-                }
-            });
+            this.urlBox.post(new MainActivity$$ExternalSyntheticLambda13(this));
         }
     }
 
@@ -1994,9 +1968,9 @@ public class MainActivity extends Activity {
         this.error.setVisibility(0);
     }
 
-    private void showHtml(final String str) {
+    private void showHtml(String str) {
         this.lastHtml = str;
-        final WebView webView = this.resultWeb;
+        WebView webView = this.resultWeb;
         if (webView == null) {
             Log.i("ScanBase", "showHtml: resultWeb == null");
             return;
@@ -2006,26 +1980,17 @@ public class MainActivity extends Activity {
             return;
         }
         Log.i("ScanBase", "показываю разбор: " + str.length() + " знаков");
-        Runnable runnable = new Runnable() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda8
-            @Override // java.lang.Runnable
-            public final void run() {
-                webView.loadDataWithBaseURL(null, str, "text/html", "utf-8", null);
-            }
-        };
+        MainActivity$$ExternalSyntheticLambda8 mainActivity$$ExternalSyntheticLambda8 = new MainActivity$$ExternalSyntheticLambda8(webView, str);
         if (webView.getHeight() > 0) {
-            runnable.run();
+            mainActivity$$ExternalSyntheticLambda8.run();
         } else {
-            webView.post(runnable);
+            webView.post(mainActivity$$ExternalSyntheticLambda8);
         }
     }
 
     private void showPage(boolean z) {
         this.web.setVisibility(z ? 0 : 8);
         this.resultWeb.setVisibility(z ? 8 : 0);
-        Button button = this.pageButton;
-        if (button != null) {
-            button.setText(z ? "К разбору" : "Страница");
-        }
     }
 
     private void showTab(int i) {
@@ -2033,6 +1998,9 @@ public class MainActivity extends Activity {
             return;
         }
         this.currentTab = i;
+        if (i == 0 && this.web != null && this.resultWeb != null) {
+            showPage(false);
+        }
         int i2 = i != 1 ? 0 : 1;
         this.content.setVisibility(i2 != 0 ? 8 : 0);
         this.aiPanel.setVisibility(i2 == 0 ? 8 : 0);
@@ -2149,13 +2117,14 @@ public class MainActivity extends Activity {
         return strReplaceAll.length() > 120 ? strReplaceAll.substring(0, 120).trim() : strReplaceAll;
     }
 
+    /** Кнопка «Страница»: только показать сайт. Обратно — «Проверить» или вкладка «Разбор». */
     private void togglePage() {
-        boolean z = this.web.getVisibility() != 0;
-        if (z && nz(this.web.getUrl()).isEmpty()) {
+        if (nz(this.web.getUrl()).isEmpty()) {
             showError("Страницу ещё не открывали: вставьте ссылку и нажмите «Проверить».");
-        } else {
-            showPage(z);
+            return;
         }
+        showError("Смотрите сайт? Вернуться к разбору — «Проверить» или вкладка «Разбор».");
+        showPage(true);
     }
 
     private static String translit(String str) {
@@ -2232,12 +2201,7 @@ public class MainActivity extends Activity {
     }
 
     public void lambda$runExtraction$0() {
-        this.web.evaluateJavascript("__extractJson()", new ValueCallback() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda12
-            @Override // android.webkit.ValueCallback
-            public final void onReceiveValue(Object obj) {
-                this.f$0.lambda$lambda$runExtraction$0$0((String) obj);
-            }
-        });
+        this.web.evaluateJavascript("__extractJson()", new MainActivity$$ExternalSyntheticLambda12(this));
     }
 
     /* JADX INFO: renamed from: lambda$runExtraction$1, reason: merged with bridge method [inline-methods] */
@@ -2253,18 +2217,8 @@ public class MainActivity extends Activity {
             int i = this.extractAttempt + 1;
             this.extractAttempt = i;
             showText("Ищу состав на странице… попытка " + (i + 1));
-            this.web.postDelayed(new Runnable() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda14
-                @Override // java.lang.Runnable
-                public final void run() {
-                    this.f$0.lambda$lambda$runExtraction$1$0();
-                }
-            }, 200L);
-            this.web.postDelayed(new Runnable() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda15
-                @Override // java.lang.Runnable
-                public final void run() {
-                    this.f$0.lambda$lambda$runExtraction$1$1();
-                }
-            }, 1200L);
+            this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda14(this), 200L);
+            this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda15(this), 1200L);
         } catch (Exception e) {
             showText("Страница не отдала содержимое: " + e.getMessage());
         }
@@ -2304,12 +2258,7 @@ public class MainActivity extends Activity {
         this.urlBox.setInputType(16);
         this.urlBox.setSingleLine(true);
         this.urlBox.setImeOptions(2);
-        this.urlBox.setOnEditorActionListener(new TextView.OnEditorActionListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda0
-            @Override // android.widget.TextView.OnEditorActionListener
-            public final boolean onEditorAction(TextView textView, int i, KeyEvent keyEvent) {
-                return this.f$0.lambda$onCreate$0(textView, i, keyEvent);
-            }
-        });
+        this.urlBox.setOnEditorActionListener(new MainActivity$$ExternalSyntheticLambda0(this));
         linearLayout.addView(this.urlBox, match());
         TextView textView = new TextView(this);
         this.error = textView;
@@ -2324,46 +2273,26 @@ public class MainActivity extends Activity {
         button.setText("Проверить");
         button.setAllCaps(false);
         button.setTextSize(12.0f);
-        button.setOnClickListener(new View.OnClickListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda1
-            @Override // android.view.View.OnClickListener
-            public final void onClick(View view) {
-                this.f$0.lambda$onCreate$1(view);
-            }
-        });
+        button.setOnClickListener(new MainActivity$$ExternalSyntheticLambda1(this));
         linearLayout2.addView(button, wrap());
         Button button2 = new Button(this);
         button2.setText("Вставить");
         button2.setAllCaps(false);
         button2.setTextSize(12.0f);
-        button2.setOnClickListener(new View.OnClickListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda2
-            @Override // android.view.View.OnClickListener
-            public final void onClick(View view) {
-                this.f$0.lambda$onCreate$2(view);
-            }
-        });
+        button2.setOnClickListener(new MainActivity$$ExternalSyntheticLambda2(this));
         linearLayout2.addView(button2, wrap());
         Button button3 = new Button(this);
         button3.setText("Страница");
         this.pageButton = button3;
         button3.setAllCaps(false);
         button3.setTextSize(12.0f);
-        button3.setOnClickListener(new View.OnClickListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda3
-            @Override // android.view.View.OnClickListener
-            public final void onClick(View view) {
-                this.f$0.lambda$onCreate$3(view);
-            }
-        });
+        button3.setOnClickListener(new MainActivity$$ExternalSyntheticLambda3(this));
         linearLayout2.addView(button3, wrap());
         Button button4 = new Button(this);
         button4.setText("В Ozon");
         button4.setAllCaps(false);
         button4.setTextSize(12.0f);
-        button4.setOnClickListener(new View.OnClickListener() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda4
-            @Override // android.view.View.OnClickListener
-            public final void onClick(View view) {
-                this.f$0.lambda$onCreate$4(view);
-            }
-        });
+        button4.setOnClickListener(new MainActivity$$ExternalSyntheticLambda4(this));
         linearLayout2.addView(button4, wrap());
         HorizontalScrollView horizontalScrollView = new HorizontalScrollView(this);
         horizontalScrollView.addView(linearLayout2, wrap());
@@ -2401,12 +2330,7 @@ public class MainActivity extends Activity {
         } catch (Exception unused2) {
         }
         WebView.setWebContentsDebuggingEnabled(true);
-        this.web.setWebViewClient(new PageHost(new PageDone() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda5
-            @Override // ru.scanbase.MainActivity.PageDone
-            public final void run() {
-                this.f$0.lambda$onCreate$5();
-            }
-        }));
+        this.web.setWebViewClient(new PageHost(new MainActivity$$ExternalSyntheticLambda5(this)));
         this.web.setVisibility(8);
         FrameLayout frameLayout = new FrameLayout(this);
         this.content = frameLayout;
@@ -2440,12 +2364,7 @@ public class MainActivity extends Activity {
         this.loading = true;
         this.web.evaluateJavascript(this.extractJs, null);
         this.web.evaluateJavascript("__scanTabs()", null);
-        this.web.postDelayed(new Runnable() { // from class: ru.scanbase.MainActivity$$ExternalSyntheticLambda6
-            @Override // java.lang.Runnable
-            public final void run() {
-                this.f$0.lambda$runExtraction$0();
-            }
-        }, this.extractAttempt == 0 ? 900L : 1200L);
+        this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda6(this), this.extractAttempt == 0 ? 900L : 1200L);
     }
 
     /* JADX INFO: renamed from: startExtraction, reason: merged with bridge method [inline-methods] */
