@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
     private final Map<String, String> ruNames = new HashMap();
     private boolean aiBusy = false;
     private volatile boolean aiStop = false;
-    private int aiBudgetSec = 45;
+    private int aiBudgetSec = 120;
     private String lastTitle = "";
     private String lastComposition = "";
     private String lastPriceText = "";
@@ -127,7 +127,7 @@ public class MainActivity extends Activity {
         public void run() {
             long jCurrentTimeMillis = System.currentTimeMillis();
             MainActivity mainActivity = this.act;
-            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 110, this.seconds, 4, new ReviewSink(mainActivity));
+            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 240, this.seconds, 7, new ReviewSink(mainActivity));
             Log.i("ScanBase", "отзыв ИИ за " + ((System.currentTimeMillis() - jCurrentTimeMillis) / 1000) + " с: " + strGenerate);
             this.act.aiBusy = false;
             MainActivity mainActivity2 = this.act;
@@ -283,19 +283,25 @@ public class MainActivity extends Activity {
         }
         StringBuilder sb2 = new StringBuilder();
         StringBuilder sb3 = new StringBuilder();
+        StringBuilder sb4 = new StringBuilder();
         for (Item item : this.lastItems) {
-            String strStripPercent = stripPercent(item.name);
-            if ("высокий".equals(item.risk)) {
-                appendName(sb3, strStripPercent + roleTag(item.role));
+            String strRu = ruName(stripPercent(item.name));
+            if (!item.law.isEmpty()) {
+                appendName(sb4, strRu + " — " + lawPlain(item.law.get(0)));
+            }
+            if ("высокий".equals(item.risk) || "превышение".equals(item.status)) {
+                appendName(sb3, strRu + roleTag(item.role) + " (" + helpFor(item) + ")");
             } else if ("низкий".equals(item.risk)) {
-                appendName(sb2, strStripPercent + roleTag(item.role));
+                appendName(sb2, strRu + roleTag(item.role));
             }
         }
-        sb.append("Хорошее в составе: ");
-        sb.append(few(sb2.toString(), 3));
-        sb.append("\nСпорное и вредное в составе: ");
-        sb.append(few(sb3.toString(), 3));
-        sb.append("\nНапиши четыре коротких предложения одним абзацем. Назови не больше одного-двух компонентов, состав не перечисляй и латинские названия не переводи. Скажи прямо: стоит брать или нет, что в нём хорошего, что спорного и чем это вредно, кому подойдёт.");
+        sb.append("Что в составе полезное: ");
+        sb.append(few(sb2.toString(), 6));
+        sb.append("\nЧто вредное или спорное: ");
+        sb.append(few(sb3.toString(), 5));
+        sb.append("\nЮридические ограничения: ");
+        sb.append(few(sb4.toString(), 4));
+        sb.append("\nНапиши подробный разбор в семь предложений одним абзацем. Не называй бренд, торговое название и артикул — их не существует, есть только состав. Первым предложением определи по составу, что это за средство (крем, шампунь, гель для умывания, сыворотка, бытовая химия) и для какой кожи или задачи оно подходит. Дальше назови до пяти вредных или спорных компонентов и для каждого скажи, какую роль он играет и что может вызвать: раздражение, аллергию, сухость, забитые поры, споры о гормональном действии. Полезные компоненты упомяни коротко, без перечисления всего состава и без латиницы. Последним предложением скажи прямо, кому это средство не подойдёт и стоит ли его брать за эту цену.");
         return sb.toString();
     }
 
@@ -2255,8 +2261,9 @@ public class MainActivity extends Activity {
         EditText editText = new EditText(this);
         this.urlBox = editText;
         editText.setHint("Ссылка на товар или текст состава");
-        this.urlBox.setInputType(16);
-        this.urlBox.setSingleLine(true);
+        this.urlBox.setInputType(1048579);
+        this.urlBox.setMinLines(2);
+        this.urlBox.setMaxLines(5);
         this.urlBox.setImeOptions(2);
         this.urlBox.setOnEditorActionListener(new MainActivity$$ExternalSyntheticLambda0(this));
         linearLayout.addView(this.urlBox, match());
