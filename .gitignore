@@ -1,0 +1,5 @@
+apk/
+build/
+stage/
+scanbase.apk
+*.dex
