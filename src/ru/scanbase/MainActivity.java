@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
     private final Map<String, String> ruNames = new HashMap();
     private boolean aiBusy = false;
     private volatile boolean aiStop = false;
-    private int aiBudgetSec = 35;
+    private int aiBudgetSec = 45;
     private String lastTitle = "";
     private String lastComposition = "";
     private String lastPriceText = "";
@@ -127,7 +127,7 @@ public class MainActivity extends Activity {
         public void run() {
             long jCurrentTimeMillis = System.currentTimeMillis();
             MainActivity mainActivity = this.act;
-            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 90, this.seconds, 3, new ReviewSink(mainActivity));
+            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 110, this.seconds, 4, new ReviewSink(mainActivity));
             Log.i("ScanBase", "отзыв ИИ за " + ((System.currentTimeMillis() - jCurrentTimeMillis) / 1000) + " с: " + strGenerate);
             this.act.aiBusy = false;
             MainActivity mainActivity2 = this.act;
@@ -229,7 +229,6 @@ public class MainActivity extends Activity {
 
     static class ReviewSink implements AiSink {
         private final MainActivity act;
-        private int pieces = 0;
 
         ReviewSink(MainActivity mainActivity) {
             this.act = mainActivity;
@@ -240,9 +239,8 @@ public class MainActivity extends Activity {
             if (this.act.aiStop) {
                 throw new IllegalStateException("stop");
             }
-            this.pieces++;
             MainActivity mainActivity = this.act;
-            mainActivity.runOnUiThread(new ShowPieceTask(mainActivity, str, this.pieces));
+            mainActivity.runOnUiThread(new ShowPieceTask(mainActivity, str));
         }
     }
 
@@ -260,42 +258,44 @@ public class MainActivity extends Activity {
     static class ShowPieceTask implements Runnable {
         private final MainActivity act;
         private final String text;
-        private final int count;
 
         ShowPieceTask(MainActivity mainActivity, String str) {
-            this(mainActivity, str, 0);
-        }
-
-        ShowPieceTask(MainActivity mainActivity, String str, int n) {
             this.act = mainActivity;
             this.text = str;
-            this.count = n;
         }
 
         @Override // java.lang.Runnable
         public void run() {
             if (this.act.aiBusy) {
-                this.act.aiBody.setText(this.count > 0 ? this.text + " [" + this.count + "]" : this.text);
+                this.act.aiBody.setText(this.text);
             }
         }
     }
 
     private String aiPrompt(int i) {
-        String strTitle = cleanTitle(this.lastTitle.isEmpty() ? this.lastComposition : this.lastTitle);
-        StringBuilder sb = new StringBuilder();
-        if (!strTitle.isEmpty()) {
-            sb.append(strTitle).append(". ");
+        StringBuilder sb = new StringBuilder("Товар: ");
+        sb.append(cleanTitle(this.lastTitle.isEmpty() ? this.lastComposition : this.lastTitle));
+        sb.append('\n');
+        if (!this.lastPriceText.isEmpty()) {
+            sb.append("Цена: ");
+            sb.append(this.lastPriceText);
+            sb.append('\n');
         }
-        sb.append("Состав: ");
-        StringBuilder sbAll = new StringBuilder();
+        StringBuilder sb2 = new StringBuilder();
+        StringBuilder sb3 = new StringBuilder();
         for (Item item : this.lastItems) {
-            String strRu = ruName(stripPercent(item.name));
-            if (strRu.isEmpty()) {
-                continue;
+            String strStripPercent = stripPercent(item.name);
+            if ("высокий".equals(item.risk)) {
+                appendName(sb3, strStripPercent + roleTag(item.role));
+            } else if ("низкий".equals(item.risk)) {
+                appendName(sb2, strStripPercent + roleTag(item.role));
             }
-            appendName(sbAll, strRu);
         }
-        sb.append(sbAll).append(".");
+        sb.append("Хорошее в составе: ");
+        sb.append(few(sb2.toString(), 3));
+        sb.append("\nСпорное и вредное в составе: ");
+        sb.append(few(sb3.toString(), 3));
+        sb.append("\nНапиши четыре коротких предложения одним абзацем. Назови не больше одного-двух компонентов, состав не перечисляй и латинские названия не переводи. Скажи прямо: стоит брать или нет, что в нём хорошего, что спорного и чем это вредно, кому подойдёт.");
         return sb.toString();
     }
 
@@ -1198,53 +1198,25 @@ public class MainActivity extends Activity {
             }
         }
         if (containsAny(lowerCase, new String[]{"methylisothiazolinone", "methylchloroisothiazolinone", "mit", "cmit"})) {
-            sb.append("MIT/CMIT — консерванты, бьют по живым клеткам кожи: они подавляют ферменты микробов, но тот же механизм задевает кератиноциты. Это доказанные контактные аллергены: дают покраснение, зуд и мокнущие высыпания в месте нанесения, и сенсибилизация остаётся на всю жизнь. В несмываемых средствах (кремы, салфетки, дезодоранты) их лучше избегать совсем; в смываемых они допустимы в малых долях.");
-        } else if (containsAny(lowerCase, new String[]{"formaldehyde", "formalin", "imidazolidinyl urea", "diazolidinyl urea", "quaternium-15", "dmdm hydantoin", "bronopol", "5-bromo-5-nitro"})) {
-            sb.append("Донор формальдегида: сам компонент распадается медленно и всё это время выделяет свободный формальдегид — тот фиксирует белки микробов, но попутно связывается с белками кожи и у части людей вызывает контактный дерматит (краснота, шелушение, зуд через 1–2 дня после нанесения). Формальдегид отнесён к потенциальным канцерогенам, поэтому в ЕС он запрещён в косметике выше следовых долей и обязан декларироваться, если его больше 0,001 %.");
+            sb.append("MIT/CMIT — сильные консерванты-аллергены; в несмываемой косметике их лучше избегать.");
+        } else if (containsAny(lowerCase, new String[]{"formaldehyde", "formalin", "imidazolidinyl urea", "diazolidinyl urea", "quaternium-15", "dmdm hydantoin"})) {
+            sb.append("Донор формальдегида: потенциальный раздражитель и сенсибилизатор.");
         } else if (containsAny(lowerCase, new String[]{"phenoxyethanol"})) {
-            sb.append("Phenoxyethanol — рабочий консервант с ограничением 1 %: он разрушает оболочки бактерий, но на кожу действует раздражающе, особенно на повреждённую и у младенцев (через него в ЕС не рекомендуют средства для детей до трёх лет в зоне подгузника). Обычная реальная доля в креме 0,3–0,8 % — это терпимо; если в составе он в первых строках, а кожа чувствительная или атопичная, лучше взять средство с более мягким консервантом.");
+            sb.append("Phenoxyethanol — распространённый консервант; обычно допустим до 1%, но у чувствительной кожи может раздражать.");
         } else if (containsAny(lowerCase, new String[]{"paraben"})) {
-            sb.append("Парабены — группа консервантов: они подавляют размножение микробов, вмешиваясь в их мембраны. В разрешённых долях (обычно до 0,4 % на каждый и до 0,8 % на смесь) данные по людям не показывают реального гормонального эффекта — «гормоноподобные» выводы получены на сверхвысоких дозах в пробирке. У группы есть отдельные формы с ограничениями и запрет на часть форм в зоне подгузника; главный практический минус — редкий, но реальный контактный дерматит у уже сенсибилизированных людей.");
-        } else if (containsAny(lowerCase, new String[]{"parfum", "fragrance", "отдушка", "aroma"})) {
-            sb.append("«Отдушка» — это не один компонент, а смесь десятков ароматических веществ, состав которой производитель не обязан раскрывать (это коммерческая тайна). Сама по себе она не яд и не «химия ради химии»: задача — запах. Риск в другом: среди этих десятков есть известные аллергены, и по правилам ЕС 26 из них (линаллоол, лимонен, гераниол, цитронеллол, эвгенол, циннамаль и другие) должны быть перечислены отдельными строками, если их больше 0,001 % в несмываемом средстве или 0,01 % в смываемом. Практический вывод: «parfum» в конце списка — обычно след и для нормальной кожи не беда; а вот если кожа чувствительная, атопичная, есть розацеа или средство идёт на лицо/вокруг глаз/для ребёнка, лучше брать вариант с пометкой «без отдушки» (fragrance free). Отдельно смотри, какие аллергены перечислены после «parfum»: их наличие — не дефект, а честная маркировка.");
-        } else if (containsAny(lowerCase, new String[]{"linalool", "limonene", "geraniol", "citronellol", "eugenol", "cinnamal", "coumarin", "isoeugenol", "farnesol", "benzyl salicylate", "benzyl cinnamate", "amyl cinnamal", "hexyl cinnamal", "anise alcohol", "benzyl alcohol", "benzoic acid"})) {
-            sb.append("Душистый аллерген из обязательного списка ЕС: он добавлен ради запаха (или встречается в эфирных маслах) и обязан быть назван явно, потому что у части людей вызывает контактную аллергию — зуд и красноту там, где средство попало на кожу. Окисляясь на воздухе, лимонен и линалоол становятся агрессивнее, чем в свежем виде. Для здоровой кожи следовой уровень безопасен; при чувствительной коже и в несмываемых средствах такие строки — повод взять другой продукт.");
-        } else if (containsAny(lowerCase, new String[]{"sodium lauryl sulfate", "sodium laureth sulfate", "sls", "sles", "ammonium lauryl sulfate", "sodium myreth sulfate"})) {
-            sb.append("Жёсткий анионный ПАВ: он очищает, смывая жир с кожи, но вместе с жиром вымывает липиды рогового слоя и денатурирует белки кератина — отсюда стянутость, шелушение и микротрещины, а при регулярном использовании на чувствительной коже — раздражение и обострение атопического дерматита. В шампуне для здоровой кожи это обычно терпимо (средство смывается за минуту), в умывалке и креме — уже минус; если кожа сухая или есть зуд, ищи мягкие ПАВы (cocamidopropyl betaine, coco/capryl glucoside, sodium cocoamphoacetate).");
-        } else if (containsAny(lowerCase, new String[]{"cocamidopropyl betaine", "coco-glucoside", "capryl glucoside", "decyl glucoside", "lauryl glucoside", "sodium cocoamphoacetate", "sodium lauroyl methyl isethionate", "sarcosinate"})) {
-            sb.append("Мягкий ПАВ: моет бережнее сульфатов и почти не трогает липидный барьер, поэтому его ставят в средства для чувствительной кожи и для детей. Cocamidopropyl betaine — редкая, но описанная причина контактного дерматита (виноваты не сам компонент, а примеси его синтеза); в качественных смесях их мало.");
-        } else if (containsAny(lowerCase, new String[]{"alcohol denat", "denatured alcohol", "ethanol", "spirits"})) {
-            sb.append("Денатурированный спирт — растворитель: он быстро испаряется, даёт ощущение лёгкости и помогает активу проникнуть глубже. Тот же механизм вымывает липиды рогового слоя и денатурирует белки, поэтому при высокой доле (в начале списка) и ежедневном использовании появляются сухость, стянутость и раздражение, а при розацеа и атопии — обострение. В тонике для жирной кожи 5–10 % обычно переносится, в креме для сухой — уже спорно.");
+            sb.append("Парабены — консерванты; в разрешённых концентрациях обычно нормальны, но есть ограничения и споры.");
+        } else if (containsAny(lowerCase, new String[]{"parfum", "fragrance", "отдушка"})) {
+            sb.append("Отдушка — частый источник аллергии и раздражения; сама по себе не «яд», но для чувствительной кожи минус.");
+        } else if (containsAny(lowerCase, new String[]{"sodium lauryl sulfate", "sodium laureth sulfate", "sls", "sles"})) {
+            sb.append("Жёсткий ПАВ: может сушить и раздражать кожу, особенно в несмываемых средствах и при высокой доле.");
+        } else if (containsAny(lowerCase, new String[]{"alcohol denat", "denatured alcohol"})) {
+            sb.append("Денатурированный спирт: растворитель; при высокой доле сушит и может нарушать барьер кожи.");
         } else if (containsAny(lowerCase, new String[]{"lanolin"})) {
-            sb.append("Ланолин — воск из шерсти: отлично смягчает и держит воду, но у части людей (особенно с аллергией на шерсть и у онкобольных после лучевой терапии) даёт контактный дерматит. Риск снижается, когда используется очищенный ланолин (lanolin alcohol, PEG-ланолины), и растёт при окислении — просроченный тюбик опаснее свежего.");
-        } else if (containsAny(lowerCase, new String[]{"mineral oil", "paraffinum", "petrolatum", "cera microcristallina", "ozokerite", "isoparaffin", "hydrogenated polyisobutene"})) {
-            sb.append("Минеральное масло/вазелин — смесь углеводородов нефти: она не впитывается, а лежит на коже плёнкой и не даёт воде испаряться, поэтому работает как самый честный «запиратель» влаги и почти не аллергична (косметическая степень очистки безопасна, в отличие от технических масел). Споры про «забивает поры» преувеличены: молекулы крупные и в пору не проникают, но плотная плёнка поверх жирной кожи может мешать оттоку секрета — при акне лучше не наносить её на всё лицо.");
-        } else if (containsAny(lowerCase, new String[]{"dimethicone", "cyclomethicone", "siloxan", "silane", "trimethylsiloxysilicate", "phenyl trimethicone", "amodimethicone"})) {
-            sb.append("Силикон: образует на коже или волосе скользящую плёнку — она снижает потерю воды, сглаживает рельеф и даёт «шёлковистость», химически инертен и не аллергичен. Претензии «не даёт коже дышать» неверны: плёнка паропроницаема. Реальный минус — на жирной коже и волосах плёнка накапливается и утяжеляет, а смыть её можно только ПАВом посильнее или шампунем без силиконов в составе.");
-        } else if (containsAny(lowerCase, new String[]{"edta", "glutamate diacetate", "phytic acid"})) {
-            sb.append("Хелат (EDTA и аналоги): связывает ионы металлов, иначе крем портится и меняет цвет, а пена падает. Через кожу почти не всасывается и в использованных долях (до 0,5 %) безопасен; претензии к нему — экологические (плохо разлагается в воде), а не про здоровье кожи.");
-        } else if (containsAny(lowerCase, new String[]{"bht", "bha", "butylated hydroxy", "propyl gallate"})) {
-            sb.append("Антиоксидант-консервант жиров: он принимает удар кислорода на себя, поэтому масло в креме не прогоркает. BHT разрешён в малых долях и через кожу всасывается слабо, но это описанный контактный аллерген (редко) и в исследованиях на животных при больших дозах влиял на печень — отсюда осторожность ЕС и «натуральные» альтернативы (токоферол, розмарин).");
-        } else if (containsAny(lowerCase, new String[]{"triclosan", "triclocarban", "climbazole", "piroctone olamine", "zinc pyrithione"})) {
-            sb.append("Антибактериальный/противогрибковый агент: он бьёт по мембранам микробов и лечит перхоть или прыщи, но попутно раздражает кожу и у части людей даёт дерматит; по триклозану есть вопросы к гормональному фону и к устойчивости микробов, поэтому в ЕС его доля ограничена 0,3 % и запрещена в некоторых категориях. В лечебном шампуне курсом — оправдано, в обычном мыле — нет.");
-        } else if (containsAny(lowerCase, new String[]{"benzophenone", "oxybenzone", "octocrylene", "homosalate", "avobenzone", "ethylhexyl methoxycinnamate", "octyl methoxycinnamate", "4-methylbenzylidene", "ensulizole"})) {
-            sb.append("Химический UV-фильтр: он поглощает ультрафиолет и превращает его в тепло — это единственный механизм, который реально защищает от фотостарения и рака кожи. Побочные эффекты двух родов: часть фильтров (бензофенон-3/оксибензон, октокрилен) — известные контактные аллергены, а несколько соединений в исследованиях на животных влияли на гормональный фон при дозах, недостижимых при нанесении на кожу. Практика: если фильтр в солнцезащитном средстве — это по пользе плюс; если он затесался в обычный дневной крем без SPF-назначения — это спорная добавка.");
-        } else if (containsAny(lowerCase, new String[]{"phthalate", "dep", "dibutyl phthalate", "dbp", "camphor", "toluene", "formaldehyde resin"})) {
-            sb.append("Компонент с ограничением по токсичности: фталаты и камфора в ЕС запрещены или жёстко ограничены в косметике (влияние на репродуктивную систему при системном попадании). В легальной продукции в ЕС/ЕАЭС их доля должна быть в запрете или следовой; наличие в составе импортного лака — повод не пользоваться им каждый день и не давать детям.");
-        } else if (containsAny(lowerCase, new String[]{"cocamide dea", "cocamide mea", "cocamide tea", "triethanolamine"})) {
-            sb.append("Компонент-регулятор и со-ПАВ: сам по себе он почти безвреден, но при нагреве и долгом хранении может образовывать нитрозамины (канцерогены) и раздражать кожу; ЕС ограничивает его долю и требует, чтобы содержание нитрозаминов было ниже 0,5 мг/кг. В свежем качественном средстве риска нет, в «бабушкином» просроченном шампуне — есть.");
-        } else if (containsAny(lowerCase, new String[]{"quaternium", "polyquaternium", "behentrimonium", "cetrimonium", "stearamidopropyl dimethylamine"})) {
-            sb.append("Катионный полимер/кондиционер: он заряжен положительно и потому прилипает к отрицательно заряженному волосу и коже — снимает статику, распутывает, даёт мягкость. У части людей (парикмахеры, люди с повреждённой кожей) даёт контактный дерматит и усиливает раздражение при экземе; в смываемом бальзаме риск мал, в несмываемом — выше.");
-        } else if (containsAny(lowerCase, new String[]{"salicylic", "гликолев", "glycolic", "lactic acid", "mandelic", "malic acid", "tartaric"})) {
-            sb.append("Кислота (отшелушивающая): она растворяет связи между чешуйками рогового слоя, поэтому обновляет кожу и прочищает поры, но ровно та же механика даёт жжение, покраснение и фоточувствительность — при передозировке или без SPF летом можно получить пигментацию и ожог. Рабочая и безопасная история: низкий процент, постепенное привыкание, SPF днём, не совмещать с ретинолом в один вечер.");
-        } else if (containsAny(lowerCase, new String[]{"retinol", "ретинол", "retinal", "retinyl", "tretinoin", "adapalene"})) {
-            sb.append("Ретиноид: он заставляет клетки кожи обновляться быстрее и стимулирует коллаген — это самый доказанный анти-эйдж актив. Обратная сторона та же: в первые недели — сухость, шелушение, жжение, а при беременности ретиноиды внутрь запрещены категорически и наружно их не рекомендуют; обязателен SPF, иначе вместо ровного тона получишь пигментные пятна.");
-        } else if (containsAny(lowerCase, new String[]{"ci 77", "ci 75", "ci 74", "ci 15", "ci 42", "ci 60", "iron oxides", "titanium dioxide", "zinc oxide"})) {
-            sb.append("Пигмент/минеральный фильтр: даёт цвет или белизну, химически инертен и не всасывается через intactную кожу. Спорные моменты два: наноразмер в аэрозольных формах (ингаляция — отдельный риск) и редкая контактная аллергия на красители. В креме с SPF на оксиде цинка/титана это плюс — минеральные фильтры почти не раздражают.");
-        } else if (containsAny(lowerCase, new String[]{"peg-", "ppg-", "ethoxylated", "polyethylene glycol", "ceteth", "steareth", "laureth"})) {
-            sb.append("Этоксилированный компонент (PEG/PPG): делает жир растворимым в воде, то есть превращает масло в крем и усиливает пену. Сам по себе он обычно не опасен, но две претензии реальны: в процессе этоксилирования могут остаться следы 1,4-диоксана и этиленоксида (ЕС их лимитирует как примеси), и этоксилиаты повышают проницаемость кожи — вместе с собой они заносят то, что рядом. Для повреждённой кожи и для детей это аргумент взять средство без PEG.");
-        } else if (containsAny(lowerCase, new String[]{"butylene glycol", "propylene glycol", "pentylene glycol", "glyceryl", "cetearyl", "caprylic", "isopropyl myristate", "isopropyl palmitate"})) {
-            sb.append("Растворитель/эмолент: удерживает воду в средстве и делает текстуру мягкой, в разрешённых долях безопасен. Пропиленгликоль у части людей даёт лёгкое раздражение при длительном контакте, а изопропилмиристат/пальмитат у предрасположенных забивают поры — при акне такие эфиры лучше не наносить на лицо.");
+            sb.append("Ланолин: смягчает, но у части людей вызывает контактный дерматит.");
+        } else if (containsAny(lowerCase, new String[]{"ci 77", "ci 75", "ci 74", "ci 15", "ci 42"})) {
+            sb.append("Пигмент/краситель: обычно допустим, но может быть спорным для чувствительной кожи.");
+        } else if (containsAny(lowerCase, new String[]{"peg-", "ppg-"})) {
+            sb.append("Этоксилированный компонент: сам по себе обычно не опасен, но спорен из-за примесей и экологии.");
         } else if (containsAny(lowerCase, new String[]{"niacinamide", "ниацинамид"})) {
             sb.append("Ниацинамид — актив: себорегуляция, барьер, тон кожи; обычно хорошо переносится.");
         } else if (containsAny(lowerCase, new String[]{"hyaluron", "гиалурон"})) {
@@ -1255,6 +1227,8 @@ public class MainActivity extends Activity {
             sb.append("Пантенол — успокаивает и поддерживает восстановление кожи.");
         } else if (containsAny(lowerCase, new String[]{"ceramide", "церамид"})) {
             sb.append("Церамиды — липиды барьера кожи; полезны при сухости.");
+        } else if (containsAny(lowerCase, new String[]{"retinol", "ретинол"})) {
+            sb.append("Ретинол — актив с доказанной пользой, но может раздражать; важна низкая концентрация и SPF.");
         } else if (containsAny(lowerCase, new String[]{"peptide", "пептид"})) {
             sb.append("Пептиды — сигнальные/увлажняющие компоненты; польза зависит от конкретного пептида.");
         } else if (containsAny(lowerCase, new String[]{"tocopherol", "токоферол"})) {
@@ -1607,8 +1581,6 @@ public class MainActivity extends Activity {
             this.extractAttempt = 0;
             showText("Открываю страницу и жду описание…");
             this.web.loadUrl(strExtractUrl);
-            this.web.postDelayed(new EarlyExtract(this), 1500);
-            this.web.postDelayed(new LoadTimeout(this), 12000);
             return;
         }
         try {
@@ -1837,7 +1809,7 @@ public class MainActivity extends Activity {
         this.aiButton.setEnabled(true);
         long jModelSize = LlamaModel.modelSize(this);
         if (jModelSize > 10000000) {
-            this.aiStatus.setText("Модель на месте: " + mb(jModelSize) + ". Напишу общее мнение в семь предложений.");
+            this.aiStatus.setText("Модель на месте: " + mb(jModelSize) + ". Напишу общее мнение в четыре предложения.");
             this.aiButton.setText(this.lastItems == null ? "Сначала сделай разбор" : "Написать отзыв заново");
             return;
         }
@@ -1896,9 +1868,10 @@ public class MainActivity extends Activity {
             return;
         }
         ArrayList arrayList = new ArrayList();
+        Iterator<String> it = listSplitNames.iterator();
         int i = 0;
-        for (String name : listSplitNames) {
-            Item itemAnalyzeItem = analyzeItem(name);
+        while (it.hasNext()) {
+            Item itemAnalyzeItem = analyzeItem(it.next());
             if (!"не найден".equals(itemAnalyzeItem.status)) {
                 i++;
             }
@@ -1912,35 +1885,6 @@ public class MainActivity extends Activity {
         this.lastTotal = listSplitNames.size();
         Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", ""));
         showHtml(buildHtml(jSONObject, arrayList, strOptString, strReplaceAll, strOptString3, i, jSONObject.optDouble("price", 0.0d), jSONObject.optString("currency", ""), jSONObject.optString("priceText", ""), jSONObject.optString("description", "")));
-    }
-
-    static class EarlyExtract implements Runnable {
-        private final MainActivity act;
-        EarlyExtract(MainActivity act) { this.act = act; }
-        @Override
-        public void run() {
-            if (!act.loading || act.extractAttempt != 0) {
-                return;
-            }
-            String url = MainActivity.nz(act.web.getUrl());
-            if (!url.matches("(?i)https?://([a-z0-9.-]*\\.)?(ozon\\.ru|wildberries\\.ru)/.*")) {
-                return;
-            }
-            Log.i("ScanBase", "ранний заход: тяну состав из API без ожидания страницы");
-            act.lambda$lambda$runExtraction$1$1();
-        }
-    }
-
-    static class LoadTimeout implements Runnable {
-        private final MainActivity act;
-        LoadTimeout(MainActivity act) { this.act = act; }
-        @Override
-        public void run() {
-            if (act.loading && act.extractAttempt == 0) {
-                Log.i("ScanBase", "таймаут загрузки 12 с — извлекаю что есть");
-                act.lambda$lambda$runExtraction$1$1();
-            }
-        }
     }
 
     private static String riskClass(String str) {
@@ -2173,13 +2117,14 @@ public class MainActivity extends Activity {
         return strReplaceAll.length() > 120 ? strReplaceAll.substring(0, 120).trim() : strReplaceAll;
     }
 
-    /** Кнопка «Страница»: переключает показ сайта / разбора. */
+    /** Кнопка «Страница»: только показать сайт. Обратно — «Проверить» или вкладка «Разбор». */
     private void togglePage() {
-        if (this.web == null || nz(this.web.getUrl()).isEmpty()) {
+        if (nz(this.web.getUrl()).isEmpty()) {
+            showError("Страницу ещё не открывали: вставьте ссылку и нажмите «Проверить».");
             return;
         }
-        boolean zVisible = this.web.getVisibility() == 0;
-        showPage(!zVisible);
+        showError("Смотрите сайт? Вернуться к разбору — «Проверить» или вкладка «Разбор».");
+        showPage(true);
     }
 
     private static String translit(String str) {
@@ -2265,7 +2210,7 @@ public class MainActivity extends Activity {
             JSONObject jSONObject = new JSONObject(unwrap(str));
             String strOptString = jSONObject.optString("composition", "");
             Log.i("ScanBase", "attempt=" + this.extractAttempt + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " url=" + jSONObject.optString("url"));
-            if (!strOptString.isEmpty() || this.extractAttempt >= 3 || jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null) {
+            if (!strOptString.isEmpty() || this.extractAttempt >= 5 || jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null) {
                 report(jSONObject);
                 return;
             }
@@ -2310,9 +2255,8 @@ public class MainActivity extends Activity {
         EditText editText = new EditText(this);
         this.urlBox = editText;
         editText.setHint("Ссылка на товар или текст состава");
-        this.urlBox.setInputType(1048579);
-        this.urlBox.setMinLines(2);
-        this.urlBox.setMaxLines(5);
+        this.urlBox.setInputType(16);
+        this.urlBox.setSingleLine(true);
         this.urlBox.setImeOptions(2);
         this.urlBox.setOnEditorActionListener(new MainActivity$$ExternalSyntheticLambda0(this));
         linearLayout.addView(this.urlBox, match());
