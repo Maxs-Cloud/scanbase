@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
     private final Map<String, String> ruNames = new HashMap();
     private boolean aiBusy = false;
     private volatile boolean aiStop = false;
-    private int aiBudgetSec = 120;
+    private int aiBudgetSec = 60;
     private String lastTitle = "";
     private String lastComposition = "";
     private String lastPriceText = "";
@@ -229,6 +229,7 @@ public class MainActivity extends Activity {
 
     static class ReviewSink implements AiSink {
         private final MainActivity act;
+        private int pieces = 0;
 
         ReviewSink(MainActivity mainActivity) {
             this.act = mainActivity;
@@ -239,8 +240,9 @@ public class MainActivity extends Activity {
             if (this.act.aiStop) {
                 throw new IllegalStateException("stop");
             }
+            this.pieces++;
             MainActivity mainActivity = this.act;
-            mainActivity.runOnUiThread(new ShowPieceTask(mainActivity, str));
+            mainActivity.runOnUiThread(new ShowPieceTask(mainActivity, str, this.pieces));
         }
     }
 
@@ -258,16 +260,22 @@ public class MainActivity extends Activity {
     static class ShowPieceTask implements Runnable {
         private final MainActivity act;
         private final String text;
+        private final int count;
 
         ShowPieceTask(MainActivity mainActivity, String str) {
+            this(mainActivity, str, 0);
+        }
+
+        ShowPieceTask(MainActivity mainActivity, String str, int n) {
             this.act = mainActivity;
             this.text = str;
+            this.count = n;
         }
 
         @Override // java.lang.Runnable
         public void run() {
             if (this.act.aiBusy) {
-                this.act.aiBody.setText(this.text);
+                this.act.aiBody.setText(this.count > 0 ? this.text + " [" + this.count + "]" : this.text);
             }
         }
     }
@@ -306,7 +314,7 @@ public class MainActivity extends Activity {
             }
         }
         if (sbRisk.length() > 0) {
-            sb.append(" Спорные компоненты: ").append(sbRisk).append(".");
+            sb.append(" Спорные: ").append(sbRisk).append(".");
         }
         StringBuilder sbLaw = new StringBuilder();
         for (Item item : this.lastItems) {
@@ -317,6 +325,7 @@ public class MainActivity extends Activity {
         if (sbLaw.length() > 0) {
             sb.append(" С ограничением: ").append(sbLaw).append(".");
         }
+        sb.append(" Напиши 5 предложений: 1) что это и для кого; 2) 2-3 полезных компонента и что делают; 3) спорные и чем вредны; 4) ограничения по закону; 5) стоит ли брать за эту цену.");
         return sb.toString();
     }
 
