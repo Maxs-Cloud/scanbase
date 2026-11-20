@@ -200,9 +200,16 @@ public class MainActivity extends Activity {
 
     static class PageHost extends WebViewClient {
         private final PageDone done;
+        private final MainActivity act;
 
-        PageHost(PageDone pageDone) {
+        PageHost(MainActivity act, PageDone pageDone) {
+            this.act = act;
             this.done = pageDone;
+        }
+
+        @Override // android.webkit.WebViewClient
+        public void onPageStarted(WebView webView, String str, android.graphics.Bitmap bitmap) {
+            this.act.kickApi();
         }
 
         @Override // android.webkit.WebViewClient
@@ -2217,8 +2224,13 @@ public class MainActivity extends Activity {
             int i = this.extractAttempt + 1;
             this.extractAttempt = i;
             showText("Ищу состав на странице… попытка " + (i + 1));
-            this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda14(this), 200L);
-            this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda15(this), 1200L);
+            String strApi = jSONObject.optString("api", "");
+            boolean zWaiting = "sent".equals(strApi) || "pending".equals(strApi);
+            if (zWaiting) {
+                Log.i("ScanBase", "ответ площадки ещё в дороге — жду, не перебираю DOM");
+            }
+            this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda14(this), zWaiting ? 1000L : 200L);
+            this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda15(this), zWaiting ? 1500L : 1200L);
         } catch (Exception e) {
             showText("Страница не отдала содержимое: " + e.getMessage());
         }
@@ -2330,7 +2342,7 @@ public class MainActivity extends Activity {
         } catch (Exception unused2) {
         }
         WebView.setWebContentsDebuggingEnabled(true);
-        this.web.setWebViewClient(new PageHost(new MainActivity$$ExternalSyntheticLambda5(this)));
+        this.web.setWebViewClient(new PageHost(this, new MainActivity$$ExternalSyntheticLambda5(this)));
         this.web.setVisibility(8);
         FrameLayout frameLayout = new FrameLayout(this);
         this.content = frameLayout;
@@ -2355,6 +2367,16 @@ public class MainActivity extends Activity {
         handleIntent(intent);
     }
 
+    /* Запрос к API площадки стартует вместе с навигацией и идёт мимо главного потока,
+       пока страница рендерится. Повторные вызовы гасит флаг __apiSent внутри extract.js. */
+    void kickApi() {
+        WebView webView = this.web;
+        if (webView == null || this.extractJs.isEmpty()) {
+            return;
+        }
+        webView.evaluateJavascript(this.extractJs + "\n__kickApi()", null);
+    }
+
     /* JADX INFO: renamed from: runExtraction, reason: merged with bridge method [inline-methods] */
     public void lambda$lambda$runExtraction$1$1() {
         if (this.extractJs.isEmpty()) {
@@ -2363,6 +2385,7 @@ public class MainActivity extends Activity {
         }
         this.loading = true;
         this.web.evaluateJavascript(this.extractJs, null);
+        this.web.evaluateJavascript("__kickApi()", null);
         this.web.evaluateJavascript("__scanTabs()", null);
         this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda6(this), this.extractAttempt == 0 ? 900L : 1200L);
     }

@@ -13,37 +13,78 @@ function __scanTabs() {
   return String(n);
 }
 
-function __apiComp() {
-  var m = location.href.match(/(?:nm|id)?[\/=](\d{6,})/);
-  if (!/wildberries\.ru/i.test(location.host) || !m) return '';
+function __apiUrl() {
+  try {
+    if (/wildberries\.ru/i.test(location.host)) {
+      var m = location.href.match(/(?:nm|id)?[\/=](\d{6,})/);
+      return m ? 'https://card.wb.ru/cards/v1/detail?appType=1&curr=rub&dest=-1257786&nm=' + m[1] : '';
+    }
+    if (/ozon\.ru/i.test(location.host)) {
+      var m2 = location.href.match(/(?:product\/.*?)(\d{6,})/) || location.pathname.match(/(\d{6,})/);
+      if (!m2) return '';
+      var path = '/product/' + m2[1] + '/?layout_container=pdpMobileThemePage2&layout_page_index=2';
+      return 'https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url=' + encodeURIComponent(path);
+    }
+  } catch (e) {}
+  return '';
+}
+
+/* Сеть вне UI-потока. Прежний XHR с флагом «синхронно» вставал на главный поток
+   на весь ответ (мобильная карточка Ozon — несколько МБ) и вешал «Разбор» насмерть. */
+function __kickApi() {
+  var url = __apiUrl();
+  if (!url) return 'none';
+  if (window.__apiSent) return window.__apiText ? 'ready' : 'pending';
+  window.__apiSent = 'sent';
   try {
     var x = new XMLHttpRequest();
-    x.open('GET', 'https://card.wb.ru/cards/v1/detail?appType=1&curr=rub&dest=-1257786&nm=' + m[1], false);
+    x.open('GET', url, true);
     x.withCredentials = true;
+    x.timeout = 15000;
+    x.onload = function () { try { window.__apiText = x.responseText || ''; } catch (e) {} };
+    x.onerror = function () { window.__apiSent = 'failed'; };
+    x.ontimeout = function () { window.__apiSent = 'failed'; };
     x.send();
-    if (x.status !== 200) return '';
-    var p = (JSON.parse(x.responseText).data.products || [])[0];
+    return 'sent';
+  } catch (e) { window.__apiSent = 'failed'; return 'err'; }
+}
+
+function __apiText() {
+  if (!window.__apiSent || window.__apiSent === 'failed') return '';
+  return typeof window.__apiText === 'string' ? window.__apiText : '';
+}
+
+function __apiComp() {
+  if (!/wildberries\.ru/i.test(location.host)) return '';
+  if (window.__wbComp !== undefined) return window.__wbComp;
+  window.__wbComp = '';
+  var t = __apiText();
+  if (!t) return '';
+  try {
+    var p = (JSON.parse(t).data.products || [])[0];
     if (!p) return '';
     var lists = (p.breakdown || []).concat(p.characteristics || []);
     for (var i = 0; i < lists.length; i++) {
-      if (lists[i] && lists[i].name && /состав/i.test(lists[i].name) && lists[i].value) return lists[i].value;
+      if (lists[i] && lists[i].name && /состав/i.test(lists[i].name) && lists[i].value) { window.__wbComp = lists[i].value; return window.__wbComp; }
     }
     return '';
   } catch (e) { return ''; }
 }
 
+/* Разбор ответа Ozon кэшируется: JSON.parse нескольких МБ — тоже дорогой
+   гость на главном потоке, повторять его на каждой попытке нельзя. */
 function __ozonComp() {
   if (!/ozon\.ru/i.test(location.host)) return '';
-  var m = location.href.match(/(?:product\/.*?)(\d{6,})/) || location.pathname.match(/(\d{6,})/);
-  if (!m) return '';
+  if (window.__ozComp !== undefined) return window.__ozComp;
+  var t = __apiText();
+  if (!t) return '';
+  window.__ozComp = __ozonParse(t);
+  return window.__ozComp;
+}
+
+function __ozonParse(t) {
   try {
-    var path = '/product/' + m[1] + '/?layout_container=pdpMobileThemePage2&layout_page_index=2';
-    var x = new XMLHttpRequest();
-    x.open('GET', 'https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url=' + encodeURIComponent(path), false);
-    x.withCredentials = true;
-    x.send();
-    if (x.status !== 200) return '';
-    var j = JSON.parse(x.responseText || '{}');
+    var j = JSON.parse(t || '{}');
     var found = '';
     function joinContentRS(arr) {
       var parts = [];
@@ -328,6 +369,7 @@ function __notFound(txt) {
 }
   return {
     url: location.href, title: document.title, len: txt.length, blocked: blocked,
+    api: (window.__apiText ? 'ready' : String(window.__apiSent || '')),
     via: api ? 'tab' : (dom ? 'dom' : ''), composition: api || dom || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
     h1: __h1(), notFound: __notFound(txt)
