@@ -1637,6 +1637,7 @@ public class MainActivity extends Activity {
             this.extractAttempt = 0;
             showText("Открываю страницу и жду описание…");
             this.web.loadUrl(strExtractUrl);
+            this.web.postDelayed(new LoadTimeout(this), 12000);
             return;
         }
         try {
@@ -1918,6 +1919,18 @@ public class MainActivity extends Activity {
         showPage(false);
         showText("Разбираю состав…");
         new Thread(new AnalyzeTask(this, jSONObject, strOptString, strReplaceAll)).start();
+    }
+
+    static class LoadTimeout implements Runnable {
+        private final MainActivity act;
+        LoadTimeout(MainActivity act) { this.act = act; }
+        @Override
+        public void run() {
+            if (act.loading && act.extractAttempt == 0) {
+                Log.i("ScanBase", "таймаут загрузки 12 с — извлекаю что есть");
+                act.lambda$lambda$runExtraction$1$1();
+            }
+        }
     }
 
     static class AnalyzeTask implements Runnable {
@@ -2310,7 +2323,7 @@ public class MainActivity extends Activity {
             JSONObject jSONObject = new JSONObject(unwrap(str));
             String strOptString = jSONObject.optString("composition", "");
             Log.i("ScanBase", "attempt=" + this.extractAttempt + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " url=" + jSONObject.optString("url"));
-            if (!strOptString.isEmpty() || this.extractAttempt >= 5 || jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null) {
+            if (!strOptString.isEmpty() || this.extractAttempt >= 3 || jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null) {
                 report(jSONObject);
                 return;
             }
