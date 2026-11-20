@@ -127,7 +127,7 @@ public class MainActivity extends Activity {
         public void run() {
             long jCurrentTimeMillis = System.currentTimeMillis();
             MainActivity mainActivity = this.act;
-            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 200, this.seconds, 6, new ReviewSink(mainActivity));
+            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 150, this.seconds, 5, new ReviewSink(mainActivity));
             Log.i("ScanBase", "отзыв ИИ за " + ((System.currentTimeMillis() - jCurrentTimeMillis) / 1000) + " с: " + strGenerate);
             this.act.aiBusy = false;
             MainActivity mainActivity2 = this.act;
@@ -286,7 +286,9 @@ public class MainActivity extends Activity {
         }
         sb.append(". Состав: ");
         StringBuilder sbAll = new StringBuilder();
+        int count = 0;
         for (Item item : this.lastItems) {
+            if (count >= 15) break;
             String strRu = ruName(stripPercent(item.name));
             String tag = roleTag(item.role);
             if (item.pct > 0.0d) {
@@ -294,6 +296,7 @@ public class MainActivity extends Activity {
             } else {
                 appendName(sbAll, strRu + tag);
             }
+            count++;
         }
         sb.append(sbAll).append(".");
         StringBuilder sbRisk = new StringBuilder();
