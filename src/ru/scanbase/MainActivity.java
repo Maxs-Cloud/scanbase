@@ -127,7 +127,7 @@ public class MainActivity extends Activity {
         public void run() {
             long jCurrentTimeMillis = System.currentTimeMillis();
             MainActivity mainActivity = this.act;
-            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 240, this.seconds, 7, new ReviewSink(mainActivity));
+            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 110, this.seconds, 4, new ReviewSink(mainActivity));
             Log.i("ScanBase", "отзыв ИИ за " + ((System.currentTimeMillis() - jCurrentTimeMillis) / 1000) + " с: " + strGenerate);
             this.act.aiBusy = false;
             MainActivity mainActivity2 = this.act;
@@ -287,21 +287,20 @@ public class MainActivity extends Activity {
         for (Item item : this.lastItems) {
             String strRu = ruName(stripPercent(item.name));
             if (!item.law.isEmpty()) {
-                appendName(sb4, strRu + " — " + lawPlain(item.law.get(0)));
+                appendName(sb4, strRu);
             }
             if ("высокий".equals(item.risk) || "превышение".equals(item.status)) {
-                appendName(sb3, strRu + roleTag(item.role) + " (" + helpFor(item) + ")");
+                appendName(sb3, strRu + roleTag(item.role));
             } else if ("низкий".equals(item.risk)) {
                 appendName(sb2, strRu + roleTag(item.role));
             }
         }
-        sb.append("Что в составе полезное: ");
-        sb.append(few(sb2.toString(), 6));
-        sb.append("\nЧто вредное или спорное: ");
-        sb.append(few(sb3.toString(), 5));
-        sb.append("\nЮридические ограничения: ");
-        sb.append(few(sb4.toString(), 4));
-        sb.append("\nНапиши подробный разбор в семь предложений одним абзацем. Не называй бренд, торговое название и артикул — их не существует, есть только состав. Первым предложением определи по составу, что это за средство (крем, шампунь, гель для умывания, сыворотка, бытовая химия) и для какой кожи или задачи оно подходит. Дальше назови до пяти вредных или спорных компонентов и для каждого скажи, какую роль он играет и что может вызвать: раздражение, аллергию, сухость, забитые поры, споры о гормональном действии. Полезные компоненты упомяни коротко, без перечисления всего состава и без латиницы. Последним предложением скажи прямо, кому это средство не подойдёт и стоит ли его брать за эту цену.");
+        sb.append("Полезное: ");
+        sb.append(few(sb2.toString(), 3));
+        sb.append("\nСпорное: ");
+        sb.append(few(sb3.toString(), 3));
+        sb.append("\nОграничения: ");
+        sb.append(few(sb4.toString(), 2));
         return sb.toString();
     }
 
@@ -1210,7 +1209,7 @@ public class MainActivity extends Activity {
         } else if (containsAny(lowerCase, new String[]{"phenoxyethanol"})) {
             sb.append("Phenoxyethanol — рабочий консервант с ограничением 1 %: он разрушает оболочки бактерий, но на кожу действует раздражающе, особенно на повреждённую и у младенцев (через него в ЕС не рекомендуют средства для детей до трёх лет в зоне подгузника). Обычная реальная доля в креме 0,3–0,8 % — это терпимо; если в составе он в первых строках, а кожа чувствительная или атопичная, лучше взять средство с более мягким консервантом.");
         } else if (containsAny(lowerCase, new String[]{"paraben"})) {
-            sb.append("Парабены — консерванты (метил-, этил-, пропил-, бутил-): они подавляют размножение микробов, вмешиваясь в их мембраны. В разрешённых долях (обычно до 0,4 % на каждый и до 0,8 % на смесь) данные по людям не показывают реального гормонального эффекта — «гормоноподобные» выводы получены на сверхвысоких дозах в пробирке. Ограничения есть для изопропил- и изобутил-форм и для пропила/бутила в зоне подгузника; главный практический минус — редкий, но реальный контактный дерматит у уже сенсибилизированных людей.");
+            sb.append("Парабены — группа консервантов: они подавляют размножение микробов, вмешиваясь в их мембраны. В разрешённых долях (обычно до 0,4 % на каждый и до 0,8 % на смесь) данные по людям не показывают реального гормонального эффекта — «гормоноподобные» выводы получены на сверхвысоких дозах в пробирке. У группы есть отдельные формы с ограничениями и запрет на часть форм в зоне подгузника; главный практический минус — редкий, но реальный контактный дерматит у уже сенсибилизированных людей.");
         } else if (containsAny(lowerCase, new String[]{"parfum", "fragrance", "отдушка", "aroma"})) {
             sb.append("«Отдушка» — это не один компонент, а смесь десятков ароматических веществ, состав которой производитель не обязан раскрывать (это коммерческая тайна). Сама по себе она не яд и не «химия ради химии»: задача — запах. Риск в другом: среди этих десятков есть известные аллергены, и по правилам ЕС 26 из них (линаллоол, лимонен, гераниол, цитронеллол, эвгенол, циннамаль и другие) должны быть перечислены отдельными строками, если их больше 0,001 % в несмываемом средстве или 0,01 % в смываемом. Практический вывод: «parfum» в конце списка — обычно след и для нормальной кожи не беда; а вот если кожа чувствительная, атопичная, есть розацеа или средство идёт на лицо/вокруг глаз/для ребёнка, лучше брать вариант с пометкой «без отдушки» (fragrance free). Отдельно смотри, какие аллергены перечислены после «parfum»: их наличие — не дефект, а честная маркировка.");
         } else if (containsAny(lowerCase, new String[]{"linalool", "limonene", "geraniol", "citronellol", "eugenol", "cinnamal", "coumarin", "isoeugenol", "farnesol", "benzyl salicylate", "benzyl cinnamate", "amyl cinnamal", "hexyl cinnamal", "anise alcohol", "benzyl alcohol", "benzoic acid"})) {

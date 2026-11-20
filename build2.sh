@@ -19,7 +19,8 @@ cp "$P/lib/arm64-v8a/"* "$STAGE/apk/lib/arm64-v8a/"
 cp "$STAGE/app.apk" "$STAGE/unaligned.apk"
 cd "$STAGE/apk" && zip -q -X ../unaligned.apk classes.dex && zip -q -r -X ../unaligned.apk assets && zip -q -0 -r -X ../unaligned.apk lib
 cd "$P"
-"$BT/zipalign" -f 4 "$STAGE/unaligned.apk" "$STAGE/aligned.apk"
+"$BT/zipalign" -f -p 4 "$STAGE/unaligned.apk" "$STAGE/aligned.apk"
 "$BT/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android \
     --out "$P/scanbase.apk" "$STAGE/aligned.apk"
 ls -l "$P/scanbase.apk"
+"$BT/zipalign" -c -p -v 4 "$P/scanbase.apk" >/dev/null || { echo "ОШИБКА: APK не выровнен по странице — установка упадёт с res=-2"; exit 1; }
