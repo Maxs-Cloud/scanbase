@@ -273,34 +273,47 @@ public class MainActivity extends Activity {
     }
 
     private String aiPrompt(int i) {
-        StringBuilder sb = new StringBuilder("Товар: ");
-        sb.append(cleanTitle(this.lastTitle.isEmpty() ? this.lastComposition : this.lastTitle));
-        sb.append('\n');
-        if (!this.lastPriceText.isEmpty()) {
-            sb.append("Цена: ");
-            sb.append(this.lastPriceText);
-            sb.append('\n');
+        String strTitle = cleanTitle(this.lastTitle.isEmpty() ? this.lastComposition : this.lastTitle);
+        StringBuilder sb = new StringBuilder();
+        if (!strTitle.isEmpty()) {
+            sb.append(strTitle);
         }
-        StringBuilder sb2 = new StringBuilder();
-        StringBuilder sb3 = new StringBuilder();
-        StringBuilder sb4 = new StringBuilder();
+        if (!this.lastPriceText.isEmpty()) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append("за ").append(this.lastPriceText);
+        }
+        StringBuilder sbGood = new StringBuilder();
+        StringBuilder sbBad = new StringBuilder();
+        StringBuilder sbLaw = new StringBuilder();
         for (Item item : this.lastItems) {
             String strRu = ruName(stripPercent(item.name));
             if (!item.law.isEmpty()) {
-                appendName(sb4, strRu);
+                appendName(sbLaw, strRu);
             }
             if ("высокий".equals(item.risk) || "превышение".equals(item.status)) {
-                appendName(sb3, strRu + roleTag(item.role));
+                appendName(sbBad, strRu);
             } else if ("низкий".equals(item.risk)) {
-                appendName(sb2, strRu + roleTag(item.role));
+                appendName(sbGood, strRu);
             }
         }
-        sb.append("Полезное: ");
-        sb.append(few(sb2.toString(), 3));
-        sb.append("\nСпорное: ");
-        sb.append(few(sb3.toString(), 3));
-        sb.append("\nОграничения: ");
-        sb.append(few(sb4.toString(), 2));
+        String good = few(sbGood.toString(), 3);
+        String bad = few(sbBad.toString(), 3);
+        String law = few(sbLaw.toString(), 2);
+        if (!"ничего".equals(good)) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append("содержит ").append(good);
+        }
+        if (!"ничего".equals(bad)) {
+            if (sb.length() > 0) sb.append(", но есть ");
+            else sb.append("есть ");
+            sb.append(bad);
+        }
+        if (!"ничего".equals(law)) {
+            if (sb.length() > 0) sb.append(", ограничение ");
+            else sb.append("ограничение ");
+            sb.append(law);
+        }
+        sb.append('.');
         return sb.toString();
     }
 
@@ -2148,14 +2161,13 @@ public class MainActivity extends Activity {
         return strReplaceAll.length() > 120 ? strReplaceAll.substring(0, 120).trim() : strReplaceAll;
     }
 
-    /** Кнопка «Страница»: только показать сайт. Обратно — «Проверить» или вкладка «Разбор». */
+    /** Кнопка «Страница»: переключает показ сайта / разбора. */
     private void togglePage() {
-        if (nz(this.web.getUrl()).isEmpty()) {
-            showError("Страницу ещё не открывали: вставьте ссылку и нажмите «Проверить».");
+        if (this.web == null || nz(this.web.getUrl()).isEmpty()) {
             return;
         }
-        showError("Смотрите сайт? Вернуться к разбору — «Проверить» или вкладка «Разбор».");
-        showPage(true);
+        boolean zVisible = this.web.getVisibility() == 0;
+        showPage(!zVisible);
     }
 
     private static String translit(String str) {
