@@ -127,7 +127,7 @@ public class MainActivity extends Activity {
         public void run() {
             long jCurrentTimeMillis = System.currentTimeMillis();
             MainActivity mainActivity = this.act;
-            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 110, this.seconds, 4, new ReviewSink(mainActivity));
+            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 200, this.seconds, 6, new ReviewSink(mainActivity));
             Log.i("ScanBase", "отзыв ИИ за " + ((System.currentTimeMillis() - jCurrentTimeMillis) / 1000) + " с: " + strGenerate);
             this.act.aiBusy = false;
             MainActivity mainActivity2 = this.act;
@@ -275,45 +275,45 @@ public class MainActivity extends Activity {
     private String aiPrompt(int i) {
         String strTitle = cleanTitle(this.lastTitle.isEmpty() ? this.lastComposition : this.lastTitle);
         StringBuilder sb = new StringBuilder();
+        if (!this.lastUrl.isEmpty()) {
+            sb.append("Ссылка: ").append(this.lastUrl).append(". ");
+        }
         if (!strTitle.isEmpty()) {
             sb.append(strTitle);
         }
         if (!this.lastPriceText.isEmpty()) {
-            if (sb.length() > 0) sb.append(' ');
-            sb.append("за ").append(this.lastPriceText);
+            sb.append(", цена ").append(this.lastPriceText);
         }
-        StringBuilder sbGood = new StringBuilder();
-        StringBuilder sbBad = new StringBuilder();
-        StringBuilder sbLaw = new StringBuilder();
+        sb.append(". Состав: ");
+        StringBuilder sbAll = new StringBuilder();
         for (Item item : this.lastItems) {
             String strRu = ruName(stripPercent(item.name));
-            if (!item.law.isEmpty()) {
-                appendName(sbLaw, strRu);
+            String tag = roleTag(item.role);
+            if (item.pct > 0.0d) {
+                appendName(sbAll, strRu + " " + Math.round(item.pct) + "%" + tag);
+            } else {
+                appendName(sbAll, strRu + tag);
             }
+        }
+        sb.append(sbAll).append(".");
+        StringBuilder sbRisk = new StringBuilder();
+        for (Item item : this.lastItems) {
             if ("высокий".equals(item.risk) || "превышение".equals(item.status)) {
-                appendName(sbBad, strRu);
-            } else if ("низкий".equals(item.risk)) {
-                appendName(sbGood, strRu);
+                appendName(sbRisk, ruName(stripPercent(item.name)));
             }
         }
-        String good = few(sbGood.toString(), 3);
-        String bad = few(sbBad.toString(), 3);
-        String law = few(sbLaw.toString(), 2);
-        if (!"ничего".equals(good)) {
-            if (sb.length() > 0) sb.append(", ");
-            sb.append("содержит ").append(good);
+        if (sbRisk.length() > 0) {
+            sb.append(" Спорные компоненты: ").append(sbRisk).append(".");
         }
-        if (!"ничего".equals(bad)) {
-            if (sb.length() > 0) sb.append(", но есть ");
-            else sb.append("есть ");
-            sb.append(bad);
+        StringBuilder sbLaw = new StringBuilder();
+        for (Item item : this.lastItems) {
+            if (!item.law.isEmpty()) {
+                appendName(sbLaw, ruName(stripPercent(item.name)) + " (лимит " + maxLabel(item.law) + ")");
+            }
         }
-        if (!"ничего".equals(law)) {
-            if (sb.length() > 0) sb.append(", ограничение ");
-            else sb.append("ограничение ");
-            sb.append(law);
+        if (sbLaw.length() > 0) {
+            sb.append(" С ограничением: ").append(sbLaw).append(".");
         }
-        sb.append('.');
         return sb.toString();
     }
 
