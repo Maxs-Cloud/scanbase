@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
     private final Map<String, String> ruNames = new HashMap();
     private boolean aiBusy = false;
     private volatile boolean aiStop = false;
-    private int aiBudgetSec = 60;
+    private int aiBudgetSec = 35;
     private String lastTitle = "";
     private String lastComposition = "";
     private String lastPriceText = "";
@@ -127,7 +127,7 @@ public class MainActivity extends Activity {
         public void run() {
             long jCurrentTimeMillis = System.currentTimeMillis();
             MainActivity mainActivity = this.act;
-            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 150, this.seconds, 5, new ReviewSink(mainActivity));
+            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 90, this.seconds, 3, new ReviewSink(mainActivity));
             Log.i("ScanBase", "отзыв ИИ за " + ((System.currentTimeMillis() - jCurrentTimeMillis) / 1000) + " с: " + strGenerate);
             this.act.aiBusy = false;
             MainActivity mainActivity2 = this.act;
@@ -283,49 +283,19 @@ public class MainActivity extends Activity {
     private String aiPrompt(int i) {
         String strTitle = cleanTitle(this.lastTitle.isEmpty() ? this.lastComposition : this.lastTitle);
         StringBuilder sb = new StringBuilder();
-        if (!this.lastUrl.isEmpty()) {
-            sb.append("Ссылка: ").append(this.lastUrl).append(". ");
-        }
         if (!strTitle.isEmpty()) {
-            sb.append(strTitle);
+            sb.append(strTitle).append(". ");
         }
-        if (!this.lastPriceText.isEmpty()) {
-            sb.append(", цена ").append(this.lastPriceText);
-        }
-        sb.append(". Состав: ");
+        sb.append("Состав: ");
         StringBuilder sbAll = new StringBuilder();
-        int count = 0;
         for (Item item : this.lastItems) {
-            if (count >= 15) break;
             String strRu = ruName(stripPercent(item.name));
-            String tag = roleTag(item.role);
-            if (item.pct > 0.0d) {
-                appendName(sbAll, strRu + " " + Math.round(item.pct) + "%" + tag);
-            } else {
-                appendName(sbAll, strRu + tag);
+            if (strRu.isEmpty()) {
+                continue;
             }
-            count++;
+            appendName(sbAll, strRu);
         }
         sb.append(sbAll).append(".");
-        StringBuilder sbRisk = new StringBuilder();
-        for (Item item : this.lastItems) {
-            if ("высокий".equals(item.risk) || "превышение".equals(item.status)) {
-                appendName(sbRisk, ruName(stripPercent(item.name)));
-            }
-        }
-        if (sbRisk.length() > 0) {
-            sb.append(" Спорные: ").append(sbRisk).append(".");
-        }
-        StringBuilder sbLaw = new StringBuilder();
-        for (Item item : this.lastItems) {
-            if (!item.law.isEmpty()) {
-                appendName(sbLaw, ruName(stripPercent(item.name)) + " (лимит " + maxLabel(item.law) + ")");
-            }
-        }
-        if (sbLaw.length() > 0) {
-            sb.append(" С ограничением: ").append(sbLaw).append(".");
-        }
-        sb.append(" Напиши 5 предложений: 1) что это и для кого; 2) 2-3 полезных компонента и что делают; 3) спорные и чем вредны; 4) ограничения по закону; 5) стоит ли брать за эту цену.");
         return sb.toString();
     }
 
@@ -1637,6 +1607,7 @@ public class MainActivity extends Activity {
             this.extractAttempt = 0;
             showText("Открываю страницу и жду описание…");
             this.web.loadUrl(strExtractUrl);
+            this.web.postDelayed(new EarlyExtract(this), 1500);
             this.web.postDelayed(new LoadTimeout(this), 12000);
             return;
         }
@@ -1941,6 +1912,23 @@ public class MainActivity extends Activity {
         this.lastTotal = listSplitNames.size();
         Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", ""));
         showHtml(buildHtml(jSONObject, arrayList, strOptString, strReplaceAll, strOptString3, i, jSONObject.optDouble("price", 0.0d), jSONObject.optString("currency", ""), jSONObject.optString("priceText", ""), jSONObject.optString("description", "")));
+    }
+
+    static class EarlyExtract implements Runnable {
+        private final MainActivity act;
+        EarlyExtract(MainActivity act) { this.act = act; }
+        @Override
+        public void run() {
+            if (!act.loading || act.extractAttempt != 0) {
+                return;
+            }
+            String url = MainActivity.nz(act.web.getUrl());
+            if (!url.matches("(?i)https?://([a-z0-9.-]*\\.)?(ozon\\.ru|wildberries\\.ru)/.*")) {
+                return;
+            }
+            Log.i("ScanBase", "ранний заход: тяну состав из API без ожидания страницы");
+            act.lambda$lambda$runExtraction$1$1();
+        }
     }
 
     static class LoadTimeout implements Runnable {
