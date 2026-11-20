@@ -82,23 +82,82 @@ function __ozonComp() {
   return window.__ozComp;
 }
 
+function __stripLead(s) {
+  return __clean(s).replace(/^\s*(?:состав(?:\s+продукта|\s+материала|\s+средства)?|ingredients?|full\s+ingredients|composition)\s*[:\-–—]\s*/i, '');
+}
+
+/* Чистый список компонентов, а не связный текст. Старому __isComp хватало слова
+   «состав» или двух запятых, и в разбор попадало рекламное «Миндальное масло в
+   составе – смягчает, питает и увлажняет кожу…». Здесь структурная проверка. */
+function __isCompList(s) {
+  s = __stripLead(s);
+  if (!s || s.length < 8 || s.length > 4000) return false;
+  if (/состав|ingredient/i.test(s)) return false;
+  if (/[?!:]/.test(s)) return false;
+  if (/\s[–—-]\s/.test(s)) return false;
+  var parts = s.split(/[,;\n]+/);
+  var keep = 0, longish = 0;
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    if (!p) continue;
+    if (/\.$/.test(p)) return false;
+    keep++;
+    if (p.length > 42) longish++;
+  }
+  if (keep < 3) return false;
+  if (longish > keep * 0.2) return false;
+  if (/(смягча|увлажня|увлажн|питает|питатель|обеспечив|помогает|снижает|защищ|создаёт|подходит|содерж|благодар|риска|кожи|волос)/i.test(s)) return false;
+  return true;
+}
+
 function __ozonParse(t) {
   try {
     var j = JSON.parse(t || '{}');
-    var found = '';
-    function joinContentRS(arr) {
+    var joinContentRS = function (arr) {
       var parts = [];
       for (var i = 0; i < arr.length; i++) {
         var it = arr[i];
         if (it && typeof it.content === 'string') parts.push(it.content);
       }
       return __clean(parts.join(' '));
+    };
+    /* Строгий путь: Ozon кладёт компоненты в characteristics с заголовком ровно
+       «Состав». «Особенности состава» и текст описания — не состав, их не берём. */
+    var TITLES = { 'состав': 1, 'состав продукта': 1, 'состав материала': 1, 'состав средства': 1, 'ingredients': 1, 'full ingredients': 1, 'ingredient': 1, 'composition': 1 };
+    var strict = '';
+    var norm = function (x) { return __clean(typeof x === 'string' ? x : '').toLowerCase().replace(/[:\s]+$/, ''); };
+    var strictWalk = function (o, depth) {
+      if (strict || !o || depth > 14) return;
+      if (Array.isArray(o)) { for (var i = 0; i < o.length && !strict; i++) strictWalk(o[i], depth + 1); return; }
+      if (typeof o !== 'object') return;
+      if (TITLES[norm(o.title)] || TITLES[norm(o.name)] || TITLES[norm(o.key)]) {
+        var cand = [];
+        if (typeof o.content === 'string') cand.push(o.content);
+        if (typeof o.value === 'string') cand.push(o.value);
+        if (Array.isArray(o.contentRS)) cand.push(joinContentRS(o.contentRS));
+        for (var c = 0; c < cand.length; c++) { if (__isCompList(cand[c])) { strict = __clean(cand[c]); return; } }
+      }
+      for (var k in o) {
+        if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+        var v = o[k];
+        if (v && typeof v === 'object') { strictWalk(v, depth + 1); if (strict) return; }
+      }
+    };
+    var states = [];
+    var ws0 = j.widgetStates || {};
+    for (var k0 in ws0) {
+      if (!Object.prototype.hasOwnProperty.call(ws0, k0)) continue;
+      if (typeof ws0[k0] !== 'string') continue;
+      try { states.push(JSON.parse(ws0[k0])); } catch (e) {}
     }
+    for (var si = 0; si < states.length && !strict; si++) strictWalk(states[si], 0);
+    if (!strict) strictWalk(j, 0);
+    if (strict) return strict;
+    var found = '';
     function compFromText(s) {
       var t = __clean(s || '');
-      var mm = t.match(/(?:^|[\n.;])\s*(состав\s*[:\-]?\s*[^\n<>]{20,3000})/i) ||
-               t.match(/(?:^|[\n.;])\s*(ingredients?\s*[:\-]?\s*[^\n<>]{20,3000})/i);
-      if (mm && __isComp(mm[1])) return mm[1];
+      var mm = t.match(/(?:^|[\n.;])\s*(?:состав|ingredients?)\s*[:\-]?\s*([^\n<>]{20,3000})/i);
+      if (mm && __isCompList(mm[1])) return __stripLead(mm[1]);
       return '';
     }
     function acceptComp(s) {
@@ -169,15 +228,16 @@ function __domComp() {
     }
     if (inner) continue;
     if (t.length < 14 || t.length > 4000) continue;
+    if (!__isCompList(t)) continue;
     var commas = (t.match(/[,;]/g) || []).length;
     if (commas < 2 && t.length < 60) continue;
     var score = commas * 10 - Math.min(t.length / 200, 5);
     if (score > bestScore) { bestScore = score; best = t; }
   }
-  if (best) return best;
+  if (best) return __stripLead(best);
   var body = document.body ? document.body.textContent : '';
   var m = body.match(/(?:^|[\.\n])\s*(состав\s*[:\-]\s*[^<>]{20,3000})/i);
-  return m ? m[1] : '';
+  return m && __isCompList(m[1]) ? __stripLead(m[1]) : '';
 }
 
 function __labelComp() {
@@ -199,7 +259,7 @@ function __labelComp() {
     if (__isComp(cand)) {
       var m = cand.match(/(?:^|[.;])\s*(состав\s*[:\-]\s*[^.;]{20,3000})/i) ||
               cand.match(/(?:^|[.;])\s*(ingredients?\s*[:\-]\s*[^.;]{20,3000})/i);
-      return m ? m[1] : cand;
+      return __stripLead(m ? m[1] : cand);
     }
   }
   return '';
@@ -209,18 +269,15 @@ function __innerTextComp() {
   var txt = document.body ? (document.body.innerText || document.body.textContent || '') : '';
   var m = txt.match(/(?:^|[\n.])\s*(состав\s*[:\-]?\s*[^\n<>]{20,3000})/i) ||
           txt.match(/(?:^|[\n.])\s*(ingredients?\s*[:\-]?\s*[^\n<>]{20,3000})/i);
-  return m && __isComp(m[1]) ? m[1] : '';
+  return m && __isComp(m[1]) ? __stripLead(m[1]) : '';
 }
 
+/* Единственный валидатор состава для всех путей. Раньше здесь был мягкий
+  recognizer: достаточно слова «состав» или двух запятых — и в разбор попадала
+   рекламная проза («Миндальное масло в составе – смягчает и питает кожу…»).
+   Всё сведено к строгой структурной проверке __isCompList. */
 function __isComp(s) {
-  if (!s || typeof s !== 'string') return false;
-  s = s.replace(/\s+/g, ' ').trim();
-  if (s.length < 3 || s.length > 4000) return false;
-  if (/^(https?:|javascript:)/i.test(s)) return false;
-  var low = s.toLowerCase();
-  var marks = ['состав', 'ingredient', 'aqua', 'water', 'glycerin', 'parfum', 'ci ', '%', 'хлопок', 'эластан', 'полиэстер', 'вискоза', 'шерсть', 'нейлон', 'акрил', 'спандекс', 'каучук', 'комплект'];
-  for (var i = 0; i < marks.length; i++) if (low.indexOf(marks[i]) > -1) return true;
-  return (s.match(/[,;]/g) || []).length >= 2;
+  return __isCompList(s);
 }
 
 function __clean(s) {
@@ -232,8 +289,8 @@ function __metaComp() {
   for (var i = 0; i < metas.length; i++) {
     var c = __clean(metas[i].getAttribute('content') || '');
     var m = c.match(/(?:^|[.;])\s*(состав\s*[:\-]\s*[^.;]{20,3000})/i) || c.match(/(?:^|[.;])\s*(ingredients?\s*[:\-]\s*[^.;]{20,3000})/i);
-    if (m && __isComp(m[1])) return m[1];
-    if (__isComp(c) && /состав|ingredient/i.test(c)) return c;
+    if (m && __isComp(m[1])) return __stripLead(m[1]);
+    if (__isComp(c) && /состав|ingredient/i.test(c)) return __stripLead(c);
   }
   return '';
 }
@@ -268,7 +325,7 @@ function __ldComp() {
   }
   for (var i = 0; i < scripts.length; i++) {
     try { walk(JSON.parse(scripts[i].textContent || '{}'), 0); } catch (e) {}
-    if (found) return found;
+    if (found) return __stripLead(found);
   }
   return '';
 }
@@ -296,7 +353,7 @@ function __stateComp() {
   var roots = [];
   try { roots.push(window.__INITIAL_STATE__, window.__NUXT__, window.__PRELOADED_STATE__, window.__NEXT_DATA__, window.state, window.pageData); } catch (e) {}
   for (var i = 0; i < roots.length && !found; i++) walk(roots[i], 0);
-  return found;
+  return __stripLead(found);
 }
 
 function __desc() {
