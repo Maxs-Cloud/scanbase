@@ -34,14 +34,14 @@ function __apiUrl() {
 function __kickApi() {
   var url = __apiUrl();
   if (!url) return 'none';
-  if (window.__apiSent) return window.__apiText ? 'ready' : 'pending';
+  if (window.__apiSent) return window.__apiRaw ? 'ready' : 'pending';
   window.__apiSent = 'sent';
   try {
     var x = new XMLHttpRequest();
     x.open('GET', url, true);
     x.withCredentials = true;
     x.timeout = 15000;
-    x.onload = function () { try { window.__apiText = x.responseText || ''; } catch (e) {} };
+    x.onload = function () { try { window.__apiRaw = x.responseText || ''; } catch (e) {} };
     x.onerror = function () { window.__apiSent = 'failed'; };
     x.ontimeout = function () { window.__apiSent = 'failed'; };
     x.send();
@@ -51,7 +51,7 @@ function __kickApi() {
 
 function __apiText() {
   if (!window.__apiSent || window.__apiSent === 'failed') return '';
-  return typeof window.__apiText === 'string' ? window.__apiText : '';
+  return typeof window.__apiRaw === 'string' ? window.__apiRaw : '';
 }
 
 function __apiComp() {
@@ -369,7 +369,7 @@ function __notFound(txt) {
 }
   return {
     url: location.href, title: document.title, len: txt.length, blocked: blocked,
-    api: (window.__apiText ? 'ready' : String(window.__apiSent || '')),
+    api: (window.__apiRaw ? 'ready' : String(window.__apiSent || '')),
     via: api ? 'tab' : (dom ? 'dom' : ''), composition: api || dom || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
     h1: __h1(), notFound: __notFound(txt)
