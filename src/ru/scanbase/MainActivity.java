@@ -2217,17 +2217,18 @@ public class MainActivity extends Activity {
             JSONObject jSONObject = new JSONObject(unwrap(str));
             String strOptString = jSONObject.optString("composition", "");
             Log.i("ScanBase", "attempt=" + this.extractAttempt + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " url=" + jSONObject.optString("url"));
-            if (!strOptString.isEmpty() || this.extractAttempt >= 5 || jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null) {
+            String strApi = jSONObject.optString("api", "");
+            boolean zWaiting = "sent".equals(strApi) || "pending".equals(strApi);
+            int iCap = zWaiting ? 9 : 5;
+            if (!strOptString.isEmpty() || this.extractAttempt >= iCap || (!zWaiting && (jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null))) {
                 report(jSONObject);
                 return;
             }
             int i = this.extractAttempt + 1;
             this.extractAttempt = i;
             showText("Ищу состав на странице… попытка " + (i + 1));
-            String strApi = jSONObject.optString("api", "");
-            boolean zWaiting = "sent".equals(strApi) || "pending".equals(strApi);
             if (zWaiting) {
-                Log.i("ScanBase", "ответ площадки ещё в дороге — жду, не перебираю DOM");
+                Log.i("ScanBase", "ответ площадки ещё в дороге — жду, DOM-прозу не выдаю");
             }
             this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda14(this), zWaiting ? 1000L : 200L);
             this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda15(this), zWaiting ? 1500L : 1200L);

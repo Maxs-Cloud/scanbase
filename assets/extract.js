@@ -340,6 +340,9 @@ function __extractJson() {
   var low = (txt.slice(0, 4000) + ' ' + document.title).toLowerCase();
   var blocked = false;
   for (var i = 0; i < __MARKS.length; i++) if (low.indexOf(__MARKS[i]) > -1) blocked = true;
+  /* Пока ответ площадки в дороге, DOM-прозу не выдаём за состав: на Ozon в карточке
+     лежит рекламный текст, он «не пустой» и затирал собой настоящий список ингредиентов. */
+  var pending = window.__apiSent === 'sent' || window.__apiSent === 'pending';
   var api = __apiComp() || __ozonComp();
   var dom = api ? '' : (__domComp() || __labelComp() || __innerTextComp() || __ldComp() || __metaComp() || __stateComp());
   var pr = __price();
@@ -370,7 +373,8 @@ function __notFound(txt) {
   return {
     url: location.href, title: document.title, len: txt.length, blocked: blocked,
     api: (window.__apiRaw ? 'ready' : String(window.__apiSent || '')),
-    via: api ? 'tab' : (dom ? 'dom' : ''), composition: api || dom || '',
+    via: api ? 'tab' : (pending ? '' : (dom ? 'dom' : '')),
+    composition: api || (pending ? '' : dom) || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
     h1: __h1(), notFound: __notFound(txt)
   };
