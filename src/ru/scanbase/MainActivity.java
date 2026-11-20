@@ -1917,8 +1917,30 @@ public class MainActivity extends Activity {
         }
         clearError();
         showPage(false);
-        showText("Разбираю состав…");
-        new Thread(new AnalyzeTask(this, jSONObject, strOptString, strReplaceAll)).start();
+        this.lastKey = productKey(jSONObject.optString("title", ""), strOptString, jSONObject.optString("priceText", ""));
+        this.lastComposition = strOptString;
+        List<String> listSplitNames = splitNames(strOptString);
+        if (listSplitNames.isEmpty()) {
+            showText("Состав найден, но не удалось разбить его на названия.\nРазбей его запятыми или открой вкладку «Отзыв ИИ» — там текст читает модель.");
+            return;
+        }
+        ArrayList arrayList = new ArrayList();
+        int i = 0;
+        for (String name : listSplitNames) {
+            Item itemAnalyzeItem = analyzeItem(name);
+            if (!"не найден".equals(itemAnalyzeItem.status)) {
+                i++;
+            }
+            arrayList.add(itemAnalyzeItem);
+        }
+        this.lastJson = jSONObject;
+        this.lastItems = arrayList;
+        this.lastTitle = jSONObject.optString("title", "");
+        this.lastPriceText = jSONObject.optString("priceText", "");
+        this.lastMatched = i;
+        this.lastTotal = listSplitNames.size();
+        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", ""));
+        showHtml(buildHtml(jSONObject, arrayList, strOptString, strReplaceAll, strOptString3, i, jSONObject.optDouble("price", 0.0d), jSONObject.optString("currency", ""), jSONObject.optString("priceText", ""), jSONObject.optString("description", "")));
     }
 
     static class LoadTimeout implements Runnable {
@@ -1930,74 +1952,6 @@ public class MainActivity extends Activity {
                 Log.i("ScanBase", "таймаут загрузки 12 с — извлекаю что есть");
                 act.lambda$lambda$runExtraction$1$1();
             }
-        }
-    }
-
-    static class AnalyzeTask implements Runnable {
-        private final MainActivity act;
-        private final JSONObject json;
-        private final String composition;
-        private final String host;
-
-        AnalyzeTask(MainActivity act, JSONObject json, String composition, String host) {
-            this.act = act;
-            this.json = json;
-            this.composition = composition;
-            this.host = host;
-        }
-
-        @Override
-        public void run() {
-            List<String> names = splitNames(composition);
-            if (names.isEmpty()) {
-                act.runOnUiThread(new ShowTextUi(act, "Состав найден, но не удалось разбить его на названия."));
-                return;
-            }
-            ArrayList items = new ArrayList();
-            int matched = 0;
-            for (String name : names) {
-                Item item = act.analyzeItem(name);
-                if (!"не найден".equals(item.status)) matched++;
-                items.add(item);
-            }
-            String html = act.buildHtml(json, items, composition, host, json.optString("via", ""), matched, json.optDouble("price", 0.0d), json.optString("currency", ""), json.optString("priceText", ""), json.optString("description", ""));
-            act.runOnUiThread(new ShowHtmlUi(act, html, json, items, composition, host, matched, names.size()));
-        }
-    }
-
-    static class ShowTextUi implements Runnable {
-        private final MainActivity act;
-        private final String text;
-        ShowTextUi(MainActivity act, String text) { this.act = act; this.text = text; }
-        @Override
-        public void run() { act.showText(text); }
-    }
-
-    static class ShowHtmlUi implements Runnable {
-        private final MainActivity act;
-        private final String html;
-        private final JSONObject json;
-        private final ArrayList items;
-        private final String composition;
-        private final String host;
-        private final int matched;
-        private final int total;
-        ShowHtmlUi(MainActivity act, String html, JSONObject json, ArrayList items, String composition, String host, int matched, int total) {
-            this.act = act; this.html = html; this.json = json; this.items = items;
-            this.composition = composition; this.host = host; this.matched = matched; this.total = total;
-        }
-        @Override
-        public void run() {
-            act.lastKey = productKey(json.optString("title", ""), composition, json.optString("priceText", ""));
-            act.lastComposition = composition;
-            act.lastJson = json;
-            act.lastItems = items;
-            act.lastTitle = json.optString("title", "");
-            act.lastPriceText = json.optString("priceText", "");
-            act.lastMatched = matched;
-            act.lastTotal = total;
-            Log.i("ScanBase", "report via=" + json.optString("via") + " host=" + host + " names=" + total + " matched=" + matched);
-            act.showHtml(html);
         }
     }
 
