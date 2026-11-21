@@ -107,6 +107,9 @@ public class MainActivity extends Activity {
     boolean aiShort = false;
     private String lastTitle = "";
     private String lastComposition = "";
+    private String lastDescription = "";
+    private String lastCatHint = "";
+    private String[] lastCat = null;
     private String lastPriceText = "";
     private int lastMatched = 0;
     private int lastTotal = 0;
@@ -338,18 +341,17 @@ public class MainActivity extends Activity {
     private String aiPrompt(int i) {
         /* Название товара в промпт не отдаём: с ним модель каждый раз
            начинала с бренда и таскала его по всем предложениям. Роль товара
-           играет категория — её берут из классификатора, на экране она не
-           светится. */
-        String strCat = detectCategory(nz(this.lastComposition) + " " + nz(this.lastTitle), this.lastItems);
+           играет категория — та же самая, что показана на экране (catInfo),
+           чтобы разбор и отзыв не противоречили друг другу. */
+        String[] cat = catInfo();
+        String strCat = cat[0];
         StringBuilder sb = new StringBuilder("Это: ");
-        if ("material".equals(strCat)) {
-            sb.append("вещь из материала (одежда, ткань, обувь)");
-        } else if ("cosmetics".equals(strCat)) {
-            sb.append("косметика или средство гигиены");
-        } else {
-            sb.append("товар, к косметике и текстилю не относится");
-        }
+        sb.append(metaWord(strCat));
         sb.append('\n');
+        sb.append("На что смотреть в такой категории: ").append(catAiNote(strCat)).append('\n');
+        if ("1".equals(cat[1])) {
+            sb.append("Товар детский: отдушки, красители, фталаты и бисфенол A важнее, чем во взрослом товаре.\n");
+        }
         if (!this.lastPriceText.isEmpty()) {
             sb.append("Цена: ");
             sb.append(this.lastPriceText);
@@ -373,8 +375,80 @@ public class MainActivity extends Activity {
            переносами строк и подписями обрывается на первых токенах, а абзац
            модель дописывает до конца. Порядок доводов задан явно — это и есть
            структура, только та, которую маленькая модель выдерживает. */
-        sb.append("\nНапиши по-русски пять предложений одним абзацем, как человек, который читает составы профессионально и объясняет их другу. Порядок такой: для чего это средство; один-два компонента из строки «Хорошее» и что они делают; компонент из строки «Спорное» и чем он мешает; кому стоит пройти мимо; брать ли за эту цену и что сделать перед первым применением. Компоненты называй только те, что перечислены выше, и ровно как они написаны, без перевода. Придуманные названия, проценты и бренд не упоминай.");
+        sb.append("\nНапиши по-русски пять предложений одним абзацем, как человек, который читает составы профессионально и объясняет их другу. Порядок такой: ").append(catFirstHint(strCat)).append("; ");
+        if ("electronics".equals(strCat) || "clothes".equals(strCat) || "other".equals(strCat)) {
+            /* У вещи из ткани и у техники «компоненты состава» — не то, о чём
+               спрашивают покупатели, и на этом месте модель начинала выдумывать
+               ингредиенты. Просим говорить про материалы и эксплуатацию. */
+            sb.append("из чего это сделано и какие из перечисленных названий за это отвечают; что может смутить; кому не подойдёт; брать ли за эту цену и ").append(catLastHint(strCat));
+            sb.append(". Перечисленных названий не выдумывай и не переводя; если их мало или они не о товаре, так и скажи.");
+        } else {
+            sb.append("один-два компонента из строки «Хорошее» и что они делают; компонент из строки «Спорное» и чем он мешает; кому стоит пройти мимо; брать ли за эту цену и ").append(catLastHint(strCat));
+            sb.append(". Компоненты называй только те, что перечислены выше, и ровно как они написаны, без перевода. Придуманные названия, проценты и бренд не упоминай.");
+        }
         return sb.toString();
+    }
+
+    /* Категория в промпте — одним словом, без пояснений: «Косметика и гигиена»
+       маленькая модель охотно повторяет в ответе дословно. */
+    static String metaWord(String str) {
+        if ("cosmetics".equals(str)) {
+            return "косметика";
+        }
+        if ("food".equals(str)) {
+            return "продукт питания";
+        }
+        if ("clothes".equals(str)) {
+            return "вещь из ткани или кожи";
+        }
+        if ("household".equals(str)) {
+            return "бытовая химия";
+        }
+        if ("pharma".equals(str)) {
+            return "лекарство или добавка";
+        }
+        if ("electronics".equals(str)) {
+            return "техника";
+        }
+        return "товар без явной категории";
+    }
+
+    static String catAiNote(String str) {
+        if ("cosmetics".equals(str)) {
+            return "порядок ингредиентов, консерванты, отдушки, ПАВ и вещества с ограничением";
+        }
+        if ("food".equals(str)) {
+            return "добавки с индексом E и их норма, сахар, соль и жиры: что в начале списка, того больше";
+        }
+        if ("clothes".equals(str)) {
+            return "состав волокна: натуральное дышит, синтетика носче; доля эластана, пропитки и красители";
+        }
+        if ("household".equals(str)) {
+            return "ПАВ, щёлочи и кислоты, хлор, фосфаты, метилизотиазолинон; средство нельзя смешивать с другими";
+        }
+        if ("pharma".equals(str)) {
+            return "действующее вещество и дозировку; норму приёма задают инструкция и врач";
+        }
+        if ("electronics".equals(str)) {
+            return "материалы корпуса и покрытий; списка ингредиентов здесь нет";
+        }
+        return "только те названия, что перечислены, без догадок о категории";
+    }
+
+    static String catLastHint(String str) {
+        if ("clothes".equals(str)) {
+            return "что проверить при примерке и первой стирке";
+        }
+        if ("food".equals(str)) {
+            return "что проверить на этикетке перед покупкой";
+        }
+        if ("electronics".equals(str)) {
+            return "что проверить в характеристиках перед покупкой";
+        }
+        if ("household".equals(str)) {
+            return "как пользоваться, чтобы не испортить поверхность и руки";
+        }
+        return "что сделать перед первым применением";
     }
 
     private String[] aliasFor(String str) {
@@ -511,7 +585,8 @@ public class MainActivity extends Activity {
         ArrayList arrayList;
         int i4 = i;
         Collections.sort(list, new MainActivity$$ExternalSyntheticLambda7());
-        String strDetectCategory = detectCategory(str, list);
+        String[] cat = catInfo();
+        String strDetectCategory = cat[0];
         int size = list.size();
         int i5 = size - i4;
         ArrayList arrayList2 = new ArrayList();
@@ -756,7 +831,7 @@ public class MainActivity extends Activity {
         this.lastComfort = iClamp2;
         this.lastRiskNames = joinRuNames(arrayList3);
         StringBuilder sb = new StringBuilder();
-        sb.append("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{font-family:sans-serif;margin:12px;background:#f7f8fb;color:#111}h2{font-size:18px;margin:6px 0 10px}h3{font-size:15px;margin:0 0 8px}.muted{color:#667085;font-size:13px}.cards{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.card{background:#fff;border-radius:14px;padding:10px 12px;box-shadow:0 1px 4px rgba(0,0,0,.08);min-width:104px;flex:1 1 104px}.score{font-size:20px;font-weight:700;margin-top:2px}.bar{height:6px;background:#e5e7eb;border-radius:999px;margin-top:6px;overflow:hidden}.fill{height:100%;border-radius:999px}.good{color:#1a7f37}.warn{color:#b8860b}.bad{color:#b42318}.fill.good{background:#1a7f37}.fill.warn{background:#f0b429}.fill.bad{background:#b42318}.hint{background:#fff;border-left:4px solid #2f80ed;border-radius:12px;padding:10px 12px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}.desc p{margin:0 0 8px}section{background:#fff;border-radius:16px;padding:12px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}details{border-top:1px solid #eee;padding:8px 0}summary{font-weight:600;cursor:pointer}.tablewrap{max-height:62vh;overflow:auto;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);background:#fff}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top;font-size:14px}th{background:#eef2f7;font-size:12px;color:#344054;position:sticky;top:0;z-index:1}tr.bad{background:#fff5f5}tr.mid{background:#fffaf0}.ok{color:#1a7f37}.mid{color:#b8860b}.bad{color:#b42318}.wait{background:#fff;border-radius:14px;padding:12px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,.06);color:#667085;font-size:14px} .small{font-size:12px} .flag{background:#fff;border-radius:14px;padding:10px 12px;margin:8px 0;box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid #9aa4b2} .flag.bad{border-left-color:#b42318}.flag.warn{border-left-color:#f0b429}.flag.info{border-left-color:#2f80ed} .flagtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px} .flagname{font-weight:700;font-size:15px} .flagrisk{font-size:12px;color:#667085;white-space:nowrap} .flagmeta{color:#344054;font-size:13px;margin-top:2px} .flaginci{color:#98a2b3;font-size:11px;margin-top:2px} .flaghelp{margin-top:6px;font-size:13px;color:#182230} .lawlist{margin:6px 0 0 18px;padding:0}.lawlist li{margin:3px 0;font-size:13px}</style><script>function scoreClass(v){v=Number(v)||0;return v>=75?'good':v>=50?'warn':'bad';}function setScore(id,v){var e=document.getElementById(id);if(!e)return;v=Math.max(0,Math.min(100,Math.round(Number(v)||0)));e.textContent=String(v);e.className='score '+scoreClass(v);var f=e.parentNode.querySelector('.fill');if(f){f.style.width=v+'%';f.className='fill '+scoreClass(v);}}function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}function reveal(){var w=document.getElementById('wait');if(w&&w.parentNode)w.parentNode.removeChild(w);}</script></head><body><h2>");
+        sb.append("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{font-family:sans-serif;margin:12px;background:#f7f8fb;color:#111}h2{font-size:18px;margin:6px 0 10px}h3{font-size:15px;margin:0 0 8px}.muted{color:#667085;font-size:13px}.cards{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.card{background:#fff;border-radius:14px;padding:10px 12px;box-shadow:0 1px 4px rgba(0,0,0,.08);min-width:104px;flex:1 1 104px}.score{font-size:20px;font-weight:700;margin-top:2px}.bar{height:6px;background:#e5e7eb;border-radius:999px;margin-top:6px;overflow:hidden}.fill{height:100%;border-radius:999px}.good{color:#1a7f37}.warn{color:#b8860b}.bad{color:#b42318}.fill.good{background:#1a7f37}.fill.warn{background:#f0b429}.fill.bad{background:#b42318}.hint{background:#fff;border-left:4px solid #2f80ed;border-radius:12px;padding:10px 12px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}.desc p{margin:0 0 8px}section{background:#fff;border-radius:16px;padding:12px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}details{border-top:1px solid #eee;padding:8px 0}summary{font-weight:600;cursor:pointer}.tablewrap{max-height:62vh;overflow:auto;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);background:#fff}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top;font-size:14px}th{background:#eef2f7;font-size:12px;color:#344054;position:sticky;top:0;z-index:1}tr.bad{background:#fff5f5}tr.mid{background:#fffaf0}.ok{color:#1a7f37}.mid{color:#b8860b}.bad{color:#b42318}.wait{background:#fff;border-radius:14px;padding:12px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,.06);color:#667085;font-size:14px} .small{font-size:12px} .flag{background:#fff;border-radius:14px;padding:10px 12px;margin:8px 0;box-shadow:0 1px 4px rgba(0,0,0,.07);border-left:4px solid #9aa4b2} .flag.bad{border-left-color:#b42318}.flag.warn{border-left-color:#f0b429}.flag.info{border-left-color:#2f80ed} .flagtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px} .flagname{font-weight:700;font-size:15px} .flagrisk{font-size:12px;color:#667085;white-space:nowrap} .flagmeta{color:#344054;font-size:13px;margin-top:2px} .flaginci{color:#98a2b3;font-size:11px;margin-top:2px} .flaghelp{margin-top:6px;font-size:13px;color:#182230} .lawlist{margin:6px 0 0 18px;padding:0}.lawlist li{margin:3px 0;font-size:13px}.catrow{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px} .chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #e6e9ef;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;box-shadow:0 1px 3px rgba(16,24,40,.06)} .chip .em{font-size:15px;line-height:1} .chip.kids{background:#fff7ed;border-color:#fdba74;color:#9a3412} .chip.soft{font-weight:500;color:#475467;background:#f2f4f7;border-style:dashed} body{background:linear-gradient(180deg,#e7eefb 0,#f7f8fb 280px) no-repeat;min-height:100vh} h2{background:linear-gradient(135deg,#1d4ed8,#0e9aa7);color:#fff;padding:12px 14px;border-radius:14px;box-shadow:0 2px 10px rgba(29,78,216,.24);margin:0 0 8px;line-height:1.3} .muted{color:#5b6472} .card{border:1px solid #eef1f6;transition:transform .12s} .bar{height:8px} .flag,.hint,section,.wait{border:1px solid #eef1f6} section>h3,.hint>h3{display:flex;align-items:center;gap:7px} .catnote{color:#475467;font-size:13px;margin:6px 0 0}</style><script>function scoreClass(v){v=Number(v)||0;return v>=75?'good':v>=50?'warn':'bad';}function setScore(id,v){var e=document.getElementById(id);if(!e)return;v=Math.max(0,Math.min(100,Math.round(Number(v)||0)));e.textContent=String(v);e.className='score '+scoreClass(v);var f=e.parentNode.querySelector('.fill');if(f){f.style.width=v+'%';f.className='fill '+scoreClass(v);}}function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}function reveal(){var w=document.getElementById('wait');if(w&&w.parentNode)w.parentNode.removeChild(w);}</script></head><body><h2>");
         sb.append(esc(strOptString));
         sb.append("</h2><div class='muted'>Источник: ");
         sb.append(esc(str12));
@@ -768,25 +843,30 @@ public class MainActivity extends Activity {
         sb.append(size);
         sb.append(" · точность ");
         sb.append(i3);
-        sb.append("%</div><div class='cards'>");
-        card(sb, "useful", "Полезно", iClamp4);
-        card(sb, "safe", "Безопасно", iClamp);
-        card(sb, "cheap", "Дёшево", iClamp3);
-        card(sb, "comfort", "Комфорт", iClamp2);
-        card(sb, "overall", "Итог", iClamp10);
-        card(sb, "", "Цена", str5.isEmpty() ? "—" : str5, d > 0.0d ? priceCheap(d, str4) : 0);
+        sb.append("%</div>");
+        catChips(sb, cat);
+        sb.append("<div class='cards'>");
+        card(sb, "useful", "📗 Полезно", iClamp4);
+        card(sb, "safe", "🛡 Безопасно", iClamp);
+        card(sb, "cheap", "💰 Дёшево", iClamp3);
+        card(sb, "comfort", "🌿 Комфорт", iClamp2);
+        card(sb, "overall", "⭐ Итог", iClamp10);
+        card(sb, "", "🏷 Цена", str5.isEmpty() ? "—" : str5, d > 0.0d ? priceCheap(d, str4) : 0);
         boolean z4 = z;
-        card(sb, "", "Доля пользы", percentShareLabel(d14, z4), (int) Math.round(d14));
+        card(sb, "", "✅ Доля пользы", percentShareLabel(d14, z4), (int) Math.round(d14));
         double d16 = d2;
-        card(sb, "", "Доля риска", percentShareLabel(d16, z4), (int) Math.round(d16));
+        card(sb, "", "⚠️ Доля риска", percentShareLabel(d16, z4), (int) Math.round(d16));
         sb.append("</div>");
         StringBuilder sb2 = new StringBuilder();
-        if ("material".equals(str13)) {
-            sb2.append("<p>Это состав материала.</p>");
-        } else if ("cosmetics".equals(str13)) {
-            sb2.append("<p>Это косметический или бытовой состав.</p>");
-        } else {
-            sb2.append("<p>Тип состава не распознан однозначно.</p>");
+        String[] meta = catMeta(str13);
+        /* Вместо прежнего «это косметический состав» на любой товар — что именно
+           разбираем и почему решили, что товар относится к этой категории. */
+        sb2.append("<p>").append(esc(meta[2])).append("</p>");
+        if ("1".equals(cat[1])) {
+            sb2.append("<p>").append(esc(kidsNote())).append("</p>");
+        }
+        if ("low".equals(cat[3]) || "низкая".equals(cat[3])) {
+            sb2.append("<p class='muted'>Категория определена неуверенно — сверьтесь с карточкой.</p>");
         }
         sb2.append("<p>Распознано ");
         sb2.append(i2);
@@ -953,6 +1033,19 @@ public class MainActivity extends Activity {
         this.tabAi = button2;
         linearLayout2.addView(button2, tabSlot());
         linearLayout.addView(linearLayout2, match());
+    }
+
+    /* Плашка категории над оценками. Показываем не только саму категорию, но и
+       уверенность с причиной: если категория определена неверно, пользователь
+       видит это сразу и не верит разбору на слово. */
+    private static void catChips(StringBuilder sb, String[] cat) {
+        String[] meta = catMeta(cat[0]);
+        sb.append("<div class='catrow'><span class='chip'><span class='em'>").append(meta[0]);
+        sb.append("</span>").append(esc(meta[1])).append("</span>");
+        if ("1".equals(cat[1])) {
+            sb.append("<span class='chip kids'><span class='em'>🧸</span>детское</span>");
+        }
+        sb.append("</div>");
     }
 
     private static void card(StringBuilder sb, String str, int i) {
@@ -1143,25 +1236,324 @@ public class MainActivity extends Activity {
         return strTrim.substring(0, iMax + 1) + " …";
     }
 
-    private static String detectCategory(String str, List<Item> list) {
-        String lowerCase = str.toLowerCase(Locale.ROOT);
-        int iCountMaterialWords = countMaterialWords(lowerCase);
+    /* ── Категории разбора ───────────────────────────────────────────────────
+       Прежде было три значения («материал», «косметика», «неизвестно»), и печенье
+       получало тот же рассказ, что и крем: «это косметический состав». Теперь
+       семь категорий плюс признак «детское». Детское — не категория, а усилитель
+       строгости: детский крем остаётся косметикой, но отдушки и консерванты в нём
+       считаем критичнее, чем во взрослом.
+
+       Признак берём из трёх мест по убыванию доверия: категория площадки (её
+       отдаёт сама карточка — subj_name у WB, хлебные крошки у Ozon и Маркета),
+       затем сам состав (попадания в базу косметики, пищевые добавки E-xxxx,
+       слова-материалы), затем название с описанием. Каждая находка добавляет вес,
+       берём максимальный; при равенстве выигрывает тот, что выше в CAT_ORDER. */
+    static final String[] CAT_ORDER = {"cosmetics", "food", "clothes", "household", "pharma", "electronics", "other"};
+
+    static final String[] CAT_KEYS_COSMETICS = {"космет", "крем", "шампун", "бальзам для волос", "гель для душа", "мыло",
+            "сыворотк", "маска для", "лосьон", "дезодорант", "зубная паст", "зубной эликсир", "ополаскиватель для полости",
+            "помад", "бальзам для губ", "тушь", "подводк", "лак для ногтей", "парфюм", "духи", "туалетная вода",
+            "умыван", "мицелляр", "скраб", "тоник", "пенка для", "мусс для", "гигиен", "интимн", "солнцезащит", "spf",
+            "автозагар", "гидролат", "эссенц", "патчи", "бров", "ресниц", "бритья", "шугар", "воск для", "маникюр",
+            "педикюр", "лак для", "крем-гель", "молочко для", "тон для лица", "праймер", "консилер", "тональн"};
+
+    static final String[] CAT_KEYS_FOOD = {"пищев", "продукт питан", "печенье", "пряник", "вафл", "шоколад", "конфет",
+            "карамель", "ириск", "мармелад", "пастила", "зефир", "халва", "козинак", "напиток", "морс", "квас", "молоко",
+            "кефир", "ряженк", "йогурт", "творог", "сыр", "масло сливочн", "спред", "колбас", "сосиск", "сардельк",
+            "ветчин", "каша", "хлопья", "мюсли", "гранола", "мука", "макарон", "крупа", "булгур", "киноа", "варенье",
+            "джем", "конфитур", "соус", "кетчуп", "майонез", "аджика", "горчица", "цикорий", "снек", "чипсы", "сухарик",
+            "гренки", "батончик", "хлебц", "сухари", "орех", "сухофрукт", "урюк", "изюм", "консерв", "салат", "икра",
+            "пельмен", "вареник", "блин", "сырок", "мороженое", "десерт", "торт", "пирожн", "булочн", "бакалея",
+            "кондитерск", "лакомств", "перекус", "глазур", "какао", "безалкогольн", "хлебобулочн", "гречк", "творожн", "мясн",
+            "рыбн", "птицы", "индейк", "куриц", "говяди", "свини", "фасол", "горох", "чечевич", "томатн", "огурц",
+            "квашен", "мед ", "мёд", "сахар-песок", "сироп топинамбур", "арахисов", "паста тахин", "хумус"};
+
+    static final String[] CAT_KEYS_CLOTHES = {"футболк", "поло", "рубашк", "блузк", "брюк", "джинс", "бембер", "платье",
+            "платьев", "сарафан", "юбк", "кофт", "свитер", "водолазк", "толстовк", "худи", "лонгслив", "кардиган",
+            "жилет", "куртк", "пальто", "плащ", "тренч", "пуховик", "комбинезон", "костюм", "пижам", "халат", "белье",
+            "бельё", "трусы", "носк", "гольфы", "леггинс", "тайтс", "перчатк", "варежек", "шарф", "шапк", "обув",
+            "кроссовк", "кед", "туфл", "ботинк", "сапог", "ботильон", "тапочк", "шлепанц", "сланц", "балетк", "лодочк",
+            "мюли", "эспадрильи", "уги", "дутик", "сумк", "рюкзак", "шоппер", "клатч", "ремень", "кожан", "текстил",
+            "постельн", "полотенц", "простын", "наволочк", "пододеяльник", "покрывал", "плед", "скатерть", "штор",
+            "гардин", "махра", "трикотаж", "футер", "габардин", "жаккард", "костюмн", "термобель", "носки",
+            "купальник", "плавк", "толстов", "дождевик", "накидк", "пончо", "шорты", "бридж", "капри", "галстук",
+            "бабочк", "подтяжк", "бандан", "платок", "палантин", "экипировк", "форма спортивн"};
+
+    static final String[] CAT_KEYS_HOUSEHOLD = {"средство для", "очистит", "очистк", "пятновыводит", "отбеливат",
+            "пятновывод", "стиральн", "капсул для стирк", "кондиционер для белья", "освежитель", "чистящ", "антижир",
+            "антинакипин", "унитаза", "раковин", "сантехник", "стёкол", "для пола", "для плиты", "для духовки",
+            "посудомоечн", "посудомойк", "для посуды", "туалетн", "ванн", "душевой кабины", "удалит жир", "плесен",
+            "размораживат", "антибактериальн", "дезинфек", "хозяйствен", "бытовая химия", "уборк", "мусора",
+            "средство от", "универсальн очистк", "накип", "известков", "спрей для уборк", "полирол",
+            "средство для стирк", "для стирк", "отбеливател", "кислородн пятновывод", "гель для унитаза", "освежитель воздуха",
+            "антиплесен", "средство для сантехник", "очиститель духовок", "удалитель обоев", "средство для стекл"};
+
+    static final String[] CAT_KEYS_PHARMA = {"бад", "биологически активн", "таблетк", "капсул", "драже", "шипуч",
+            "витамин", "минеральн", "аминокислот", "дозировк", "дневная норма", "приём внутрь", "показани",
+            "противопоказан", "побочн", "аптечн", "мазь", "наружного примен", "настойк", "сироп", "капли",
+            "назальн", "антисептик", "перекись", "хлоргексидин", "мирамистин", "бинт", "шприц", "пластыр",
+            "термометр", "тонометр", "глюкометр", "раствор для инфузий", "свечи ректал", "суспензия", "гранул", "аптек",
+            "порошок для приготовления", "фиточай", "сбор аптечн", "лечебн", "медизз"};
+
+    static final String[] CAT_KEYS_ELECTRONICS = {"смартфон", "телефон", "наушник", "гарнитур", "колонк", "зарядн",
+            "сетевой адаптер", "кабель", "аккумулятор", "повербанк", "power bank", "внешний аккумулятор", "клавиатур",
+            "мышь", "монитор", "ноутбук", "планшет", "компьютер", "телевизор", "роутер", "маршрутизатор", "смарт-час",
+            "часы смарт", "фитнес-браслет", "трекер", "электрощётк", "триммер", "машинка для стрижк", "эпилятор",
+            "фен", "стайлер", "выпрямител", "плойк", "микроволнов", "чайник", "кофеварк", "кофемолк", "блендер",
+            "миксер", "мясорубк", "тостер", "гриль", "пароварк", "аэрогриль", "пылесос", "утюг", "отпаривател",
+            "вентилятор", "обогревател", "кондиционер", "увлажнител", "очистител воздуха", "лампочк", "светильник",
+            "люстр", "фонарик", "батарейк", "элемент питания", "карта памяти", "флешк", "жесткий диск", "ssd",
+            "проектор", "квадрокоптер", "электросамокат", "веб-камер", "микрофон", "геймпад", "джойстик", "стабилизатор"};
+
+    /* Товары, которым разбор по составу не положен в принципе: диван из
+        жаккарда — не одежда, пусть в составе и ткань. Ярлык такого домена
+        весит три — больше, чем догадка по составу (два), но меньше, чем
+        прямой ярлык разбираемой категории (пять). */
+    static final String[] CAT_KEYS_OTHER_DOMAIN = {"мебель", "кресло", "диван", "комод", "стул", "шкаф", "полк",
+            "тумбочк", "посуда", "сковород", "кастрюл", "канцеляр", "папка", "степлер", "инструмент", "дрель",
+            "перфоратор", "шуруповёрт", "гаечн", "автотовары", "автомобильн", "моторн", "книга", "книги", "книжк",
+            "лоток", "корм", "животным", "когтеточк", "спорттовар", "турист", "палатк", "спальник", "удобрени",
+            "рассада", "лакокрасочн", "ламинат", "плитка", "обои", "герметик", "монтажн пен"};
+
+    /* Не категория, а признак: «детский крем» — косметика, но разбираем строже. */
+    static final String[] CAT_KEYS_KIDS = {"детск", "детям", "ребёнк", "ребенок", "малыш", "игрушк", "соск",
+            "прорезыват", "пустышк", "бутылочк", "поильник", "подгузник", "присыпк", "коляск", "автолюльк", "кроватк",
+            "манеж", "конструктор", "пазл", "головоломк", "кукол", "мягка игрушк", "лепк", "пластилин", "раскраск",
+            "книжк для детей", "малышам", "с рождения", "0+", "новорождённ", "ясельн", "детская комната",
+            "девочк", "мальчик", "для детей", "подростк", "школьник", "первоклассн"};
+
+    private static final String[] COSMETIC_MARKS = {"aqua", "water", "вода", "glycerin", "глицерин", "parfum",
+            "отдуш", "sodium laureth", "sodium lauryl", "cetearyl", "butyrospermum", "пантенол", "ниацинамид"};
+
+    /* «кофе» и «чай» как подстроки ловят кофеварку и чайник, поэтому их ищем
+       целым словом — тем же приёмом, что и слова-материалы в countMaterialWords. */
+    static final String[] CAT_WORDS_FOOD = {"кофе", "чай", "мёд", "мед", "какао", "халва"};
+
+    private static Pattern wordsPattern;
+    private static String[] wordsSource;
+
+    private static boolean containsAnyWord(String str, String[] strArr) {
+        if (strArr == null || strArr.length == 0 || str == null || str.isEmpty()) {
+            return false;
+        }
+        if (strArr != wordsSource) {
+            StringBuilder sb = new StringBuilder();
+            for (String str2 : strArr) {
+                if (sb.length() > 0) {
+                    sb.append('|');
+                }
+                sb.append(Pattern.quote(str2));
+            }
+            wordsPattern = Pattern.compile("(?<![\\p{L}\\p{N}])(" + sb + ")(?![\\p{L}])", 66);
+            wordsSource = strArr;
+        }
+        return wordsPattern.matcher(str).find();
+    }
+
+    private static String[] catWords(String str) {
+        return "food".equals(str) ? CAT_WORDS_FOOD : null;
+    }
+
+    private static String[] catKeys(String str) {
+        switch (str) {
+            case "cosmetics": return CAT_KEYS_COSMETICS;
+            case "food": return CAT_KEYS_FOOD;
+            case "clothes": return CAT_KEYS_CLOTHES;
+            case "household": return CAT_KEYS_HOUSEHOLD;
+            case "pharma": return CAT_KEYS_PHARMA;
+            case "electronics": return CAT_KEYS_ELECTRONICS;
+            default: return null;
+        }
+    }
+
+    /* Э-шки ищем только как индекс добавки: «витамин Е 100 мг» — не номер E,
+       поэтому единицу измерения отбрасываем сразу. */
+    private static Pattern eNumberPattern;
+
+    private static int countENumbers(String str) {
+        String s = nz(str);
+        if (s.isEmpty()) {
+            return 0;
+        }
+        Pattern pattern = eNumberPattern;
+        if (pattern == null) {
+            pattern = Pattern.compile("(?i)(?<![\\p{L}\\p{N}])(?:e|е)[-–—\\s]{0,2}\\d{3}[\\p{L}]{0,2}(?!\\s*(?:мг|мкг|mg|mcg|iu|ме\\b))");
+            eNumberPattern = pattern;
+        }
+        int i = 0;
+        Matcher matcher = pattern.matcher(s);
+        while (matcher.find() && i < 200) {
+            i++;
+        }
+        return i;
+    }
+
+    /* {ключ, «1» если детское, почему так решили, уверенность, вес} */
+    static String[] categoryOf(String strComp, String strTitle, String strDesc, String strPlat,
+                               int iMaterials, int iCatalog, int iFood) {
+        String lowerCase = nz(strPlat).toLowerCase(Locale.ROOT);
+        String lowerCase2 = (nz(strTitle) + " " + nz(strDesc)).toLowerCase(Locale.ROOT);
+        String lowerCase3 = nz(strComp).toLowerCase(Locale.ROOT);
+        int i = CAT_ORDER.length;
+        int[] iArr = new int[i];
+        String[] strArrWhy = new String[i];
+        for (int i2 = 0; i2 < i; i2++) {
+            String[] catKeys = catKeys(CAT_ORDER[i2]);
+            String[] catWords = catWords(CAT_ORDER[i2]);
+            if (catKeys == null && catWords == null) {
+                continue;
+            }
+            if (containsAny(lowerCase, catKeys) || containsAnyWord(lowerCase, catWords)) {
+                /* Пять: собственный ярлык площадки перевешивает любые наши
+                   догадки по составу (максимум 3 + 1). */
+                iArr[i2] = iArr[i2] + 5;
+                strArrWhy[i2] = "категория площадки";
+            } else if (containsAny(lowerCase2, catKeys) || containsAnyWord(lowerCase2, catWords)) {
+                iArr[i2] = iArr[i2] + 2;
+                strArrWhy[i2] = "название и описание";
+            }
+        }
+        int iCos = catIndex("cosmetics");
+        int iFoodIdx = catIndex("food");
+        int iClo = catIndex("clothes");
+        if (iCatalog >= 3) {
+            iArr[iCos] = iArr[iCos] + 3;
+            strArrWhy[iCos] = "состав совпал с базой косметики";
+        } else if (iCatalog >= 1) {
+            iArr[iCos] = iArr[iCos] + 2;
+            strArrWhy[iCos] = "часть названий есть в базе косметики";
+        }
+        if (iFood >= 3) {
+            iArr[iFoodIdx] = iArr[iFoodIdx] + 3;
+            strArrWhy[iFoodIdx] = "в составе несколько пищевых добавок из базы";
+        } else if (iFood >= 1) {
+            iArr[iFoodIdx] = iArr[iFoodIdx] + 2;
+            strArrWhy[iFoodIdx] = "в составе есть пищевая добавка из базы";
+        } else if (countENumbers(lowerCase3) >= 2) {
+            iArr[iFoodIdx] = iArr[iFoodIdx] + 2;
+            strArrWhy[iFoodIdx] = "в составе номера E";
+        }
+        if (iMaterials >= 3) {
+            iArr[iClo] = iArr[iClo] + 3;
+            strArrWhy[iClo] = "в составе перечислены волокна";
+        } else if (iMaterials >= 1) {
+            iArr[iClo] = iArr[iClo] + 2;
+            strArrWhy[iClo] = "в составе есть волокно";
+        }
+        if (containsAny(lowerCase3, COSMETIC_MARKS)) {
+            iArr[iCos] = iArr[iCos] + 1;
+            if (strArrWhy[iCos] == null) {
+                strArrWhy[iCos] = "в составе вода, глицерин или отдушка";
+            }
+        }
+        int iOther = catIndex("other");
+        if (containsAny(lowerCase, CAT_KEYS_OTHER_DOMAIN) && iArr[iOther] < 3) {
+            iArr[iOther] = 3;
+            strArrWhy[iOther] = "товар не из разбираемых доменов";
+        }
+        int iBest = 0;
+        int iBestIdx = i - 1;
+        for (int i3 = 0; i3 < i; i3++) {
+            if (iArr[i3] > iBest) {
+                iBest = iArr[i3];
+                iBestIdx = i3;
+            }
+        }
+        String strKey = CAT_ORDER[iBestIdx];
+        boolean zKids = containsAny(lowerCase + " " + lowerCase2, CAT_KEYS_KIDS);
+        return new String[]{strKey, zKids ? "1" : "0",
+                iBest == 0 ? "узнаваемых признаков нет" : nz(strArrWhy[iBestIdx]),
+                iBest >= 5 ? "высокая" : iBest >= 2 ? "средняя" : "низкая",
+                String.valueOf(iBest)};
+    }
+
+    private static int catIndex(String str) {
+        for (int i = 0; i < CAT_ORDER.length; i++) {
+            if (CAT_ORDER[i].equals(str)) {
+                return i;
+            }
+        }
+        return CAT_ORDER.length - 1;
+    }
+
+    /* {значок, название, что разбираем} */
+    static String[] catMeta(String str) {
+        if ("cosmetics".equals(str)) {
+            return new String[]{"💄", "Косметика и гигиена", "Что разбираем: порядок ингредиентов (что в начале — того больше), консерванты, отдушки, поверхностно-активные вещества и позиции с ограничением по регламенту."};
+        }
+        if ("food".equals(str)) {
+            return new String[]{"🍽", "Продукты питания", "Что разбираем: пищевые добавки с индексом E и их допустимую норму, а также сахар, соль и жиры — что стоит в начале списка, того в продукте больше всего."};
+        }
+        if ("clothes".equals(str)) {
+            return new String[]{"👕", "Одежда и текстиль", "Что разбираем: состав волокна — натуральное дышит и приятнее к телу, синтетика носче и меньше мнётся; отдельно доля эластана и отделка: пропитки и плотные красители."};
+        }
+        if ("household".equals(str)) {
+            return new String[]{"🧴", "Бытовая химия", "Что разбираем: поверхностно-активные вещества, щёлочи и кислоты, хлор, фосфаты и консерванты вроде метилизотиазолинона — они раздражают кожу и дыхательные пути."};
+        }
+        if ("pharma".equals(str)) {
+            return new String[]{"💊", "БАД и аптека", "Что разбираем: действующие вещества и дозировки. Это не косметика: норму приёма и сочетаемость определяет инструкция и врач, а не оценка состава."};
+        }
+        if ("electronics".equals(str)) {
+            return new String[]{"🔌", "Электроника и техника", "Что разбираем: список ингредиентов здесь неприменим — смотрим материалы корпуса и покрытий, а косметическую оценку не применяем."};
+        }
+        return new String[]{"📦", "Прочее", "Что разбираем: товар не отнёсся к известной группе, поэтому названия компонентов сверяем с базой без категорных правил."};
+    }
+
+    static String kidsNote() {
+        return "Товар детский — требования строже: отдушки, красители, фталаты и бисфенол A считаем критичнее, чем во взрослом товаре.";
+    }
+
+    /* Что маленькая модель должна сказать первой фразой: «для чего это
+       средство» у печенья и у кроссовок звучит одинаково неправильно. */
+    static String catFirstHint(String str) {
+        if ("cosmetics".equals(str)) {
+            return "для чего это средство";
+        }
+        if ("food".equals(str)) {
+            return "что это за продукт и кому он подойдёт";
+        }
+        if ("clothes".equals(str)) {
+            return "что это за вещь и как она поведёт себя в носке";
+        }
+        if ("household".equals(str)) {
+            return "для какой уборки это средство и с чем его нельзя смешивать";
+        }
+        if ("pharma".equals(str)) {
+            return "для чего этот препарат или добавка и зачем обсудить приём с врачом";
+        }
+        if ("electronics".equals(str)) {
+            return "для чего эта техника и на что смотреть в характеристиках";
+        }
+        return "что это за товар";
+    }
+
+    private int countByKind(boolean zCatalog) {
+        List<Item> list = this.lastItems;
+        if (list == null) {
+            return 0;
+        }
         int i = 0;
         for (Item item : list) {
-            if (item.role.contains("актив") || item.role.contains("увлажнение") || item.role.contains("смягчение") || item.role.contains("консерв") || item.role.contains("отдуш") || item.catalog) {
+            if (zCatalog ? item.catalog : item.food != null) {
                 i++;
             }
         }
-        if (containsAny(lowerCase, new String[]{"aqua", "water", "вода", "glycerin", "глицерин", "parfum", "отдуш"})) {
-            i++;
+        return i;
+    }
+
+    /* Категория считается один раз на разбор и переиспользуется экраном и
+       промптом ИИ: иначе на экране было «косметика», а модель получала
+       «неизвестно», и пользователь видел расхождение в двух абзацах. */
+    private String[] catInfo() {
+        String[] strArr = this.lastCat;
+        if (strArr != null) {
+            return strArr;
         }
-        if (iCountMaterialWords > 0 && iCountMaterialWords >= i) {
-            return "material";
-        }
-        if (i > 0) {
-            return "cosmetics";
-        }
-        return iCountMaterialWords > 0 ? "material" : "unknown";
+        String strLower = nz(this.lastComposition).toLowerCase(Locale.ROOT);
+        String[] strArrCompute = categoryOf(this.lastComposition, this.lastTitle, this.lastDescription,
+                this.lastCatHint, countMaterialWords(strLower), countByKind(true), countByKind(false));
+        this.lastCat = strArrCompute;
+        return strArrCompute;
     }
 
     private void ensureNameIndex() {
@@ -2078,10 +2470,14 @@ public class MainActivity extends Activity {
         this.lastJson = jSONObject;
         this.lastItems = arrayList;
         this.lastTitle = jSONObject.optString("title", "");
+        this.lastDescription = jSONObject.optString("description", "");
+        this.lastCatHint = jSONObject.optString("cat", "");
+        this.lastCat = null;
         this.lastPriceText = jSONObject.optString("priceText", "");
         this.lastMatched = i;
         this.lastTotal = listSplitNames.size();
-        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", ""));
+        String[] catDbg = catInfo();
+        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", "") + " cat=" + catDbg[0] + ("1".equals(catDbg[1]) ? "/kids" : "") + " conf=" + catDbg[3] + " why=" + catDbg[2] + " plat=" + trim(this.lastCatHint, 60));
         if (missed.length() > 0) {
             Log.i("ScanBase", "не распознано (" + (listSplitNames.size() - i) + "): " + missed);
         }
