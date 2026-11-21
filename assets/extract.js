@@ -1,14 +1,27 @@
 var __MARKS = ["проверяем браузер", "проверка вы не робот", "antibot", "доступ ограничен", "are you a robot", "captcha", "pardon our interruption", "cf-chl"];
 
+/* Разворачивает вкладки «Состав» и обрывки текста. Прежняя версия брала ВСЕ div/span/li
+   страницы и для каждого считала textContent всего поддерева — на мобильной карточке
+   Ozon это десятки тысяч узлов и десятки секунд, JS-поток стоял и следующий
+   __extractJson() уже не успевал отработать: «виснет на разборе».
+   Теперь: только листовые подписи (childElementCount отсекает контейнеры за O(1)),
+   потолок узлов и потолок времени. */
 function __scanTabs() {
   var n = 0;
-  var nodes = document.querySelectorAll('button,a,li,span,div,summary,[role="tab"]');
-  for (var i = 0; i < nodes.length; i++) {
-    var t = (nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
+  var t0 = Date.now();
+  var nodes = document.querySelectorAll('button,[role="tab"],summary,a,span,li');
+  var cap = Math.min(nodes.length, 3000);
+  for (var i = 0; i < cap; i++) {
+    var el = nodes[i];
+    if (el.childElementCount > 2) continue;
+    var t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (t.length > 40) continue;
     if (/^(состав|состав материала|состав продукта|состав и характеристики|ingredients|full ingredients)\s*[:\-]?$/i.test(t) ||
         /^(показать полностью|ещё|еще|развернуть|show more)$/i.test(t)) {
-      try { nodes[i].click(); n++; } catch (e) {}
+      try { el.click(); n++; } catch (e) {}
+      if (n >= 6) break;
     }
+    if ((i & 63) === 0 && Date.now() - t0 > 250) break;
   }
   return String(n);
 }
@@ -65,7 +78,14 @@ function __apiComp() {
     if (!p) return '';
     var lists = (p.breakdown || []).concat(p.characteristics || []);
     for (var i = 0; i < lists.length; i++) {
-      if (lists[i] && lists[i].name && /состав/i.test(lists[i].name) && lists[i].value) { window.__wbComp = lists[i].value; return window.__wbComp; }
+      if (lists[i] && lists[i].name && /состав/i.test(lists[i].name) && lists[i].value) {
+        /* Строка «Состав» у WB бывает и рекламной прозой, и всем описанием
+           карточки сразу. Наружу отдаём только проверенный список компонентов:
+           иначе splitNames() на телефоне разбивает страницу на тысячи кусков и
+           разбор на главном потоке вешает приложение. */
+        var v = __clean(lists[i].value);
+        if (v.length <= 6000 && __isCompList(v)) { window.__wbComp = __stripLead(v); return window.__wbComp; }
+      }
     }
     return '';
   } catch (e) { return ''; }
@@ -101,12 +121,15 @@ function __isCompList(s) {
     var p = parts[i].trim();
     if (!p) continue;
     if (/\.$/.test(p)) return false;
+    if (/^(без|только|для|на|по|из|с)\s/i.test(p)) return false;
     keep++;
     if (p.length > 42) longish++;
   }
   if (keep < 3) return false;
   if (longish > keep * 0.2) return false;
-  if (/(смягча|увлажня|увлажн|питает|питатель|обеспечив|помогает|снижает|защищ|создаёт|подходит|содерж|благодар|риска|кожи|волос)/i.test(s)) return false;
+  if (/(смягча|увлажня|увлажн|питает|питатель|обеспечив|помогает|снижает|защищ|создаёт|подходит|содерж|благодар|риска|кож|волос)/i.test(s)) return false;
+  if (/(инновационн|уникальн|текстур|формул|нот[ыае]|свежест|новинк|хит\s|продаж|подарок|доставк|скидк|акци|реклам|бренд|премиум|идеальн|интенсивн|эффект|рекоменду)/i.test(s)) return false;
+  if (/(нанесите|нанеси|втира|распредел|смой|массир|массажн|вспень|оставь|оставьте|удобно|легко|быстро)/i.test(s)) return false;
   return true;
 }
 
@@ -216,11 +239,15 @@ function __ozonParse(t) {
 
 function __domComp() {
   var best = '', bestScore = -1;
+  var t0 = Date.now();
   var nodes = document.querySelectorAll('li, tr, p, div, span, dt, dd, td');
-  for (var i = 0; i < nodes.length; i++) {
+  for (var i = 0, cap = Math.min(nodes.length, 2500); i < cap; i++) {
     var n = nodes[i];
     var t = (nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
-    if (!/^состав\s*[:\-]?\s*/i.test(t) && !/^ingredients?\s*[:\-]?\s*/i.test(t)) continue;
+    if (!/^состав\s*[:\-]?\s*/i.test(t) && !/^ingredients?\s*[:\-]?\s*/i.test(t)) {
+      if ((i & 127) === 0 && Date.now() - t0 > 300) break;
+      continue;
+    }
     var inner = false;
     for (var j = 0; j < nodes[i].children.length; j++) {
       var ct = (nodes[i].children[j].textContent || '').replace(/\s+/g, ' ').trim();
@@ -234,42 +261,7 @@ function __domComp() {
     var score = commas * 10 - Math.min(t.length / 200, 5);
     if (score > bestScore) { bestScore = score; best = t; }
   }
-  if (best) return __stripLead(best);
-  var body = document.body ? document.body.textContent : '';
-  var m = body.match(/(?:^|[\.\n])\s*(состав\s*[:\-]\s*[^<>]{20,3000})/i);
-  return m && __isCompList(m[1]) ? __stripLead(m[1]) : '';
-}
-
-function __labelComp() {
-  var labels = document.querySelectorAll('*');
-  for (var i = 0; i < labels.length; i++) {
-    var n = labels[i];
-    var t = __clean(n.textContent || '');
-    if (!/^(состав|состав продукта|ingredients?|full ingredients)\s*[:\-]?$/i.test(t)) continue;
-    var cand = '';
-    if (n.nextElementSibling) cand = __clean(n.nextElementSibling.textContent || '');
-    if (!__isComp(cand) && n.parentElement) {
-      var parentText = __clean(n.parentElement.textContent || '');
-      var after = parentText.replace(t, '').replace(/^[:\-\s]+/, '');
-      if (__isComp(after)) cand = after;
-      if (!__isComp(cand) && n.parentElement.nextElementSibling) {
-        cand = __clean(n.parentElement.nextElementSibling.textContent || '');
-      }
-    }
-    if (__isComp(cand)) {
-      var m = cand.match(/(?:^|[.;])\s*(состав\s*[:\-]\s*[^.;]{20,3000})/i) ||
-              cand.match(/(?:^|[.;])\s*(ingredients?\s*[:\-]\s*[^.;]{20,3000})/i);
-      return __stripLead(m ? m[1] : cand);
-    }
-  }
-  return '';
-}
-
-function __innerTextComp() {
-  var txt = document.body ? (document.body.innerText || document.body.textContent || '') : '';
-  var m = txt.match(/(?:^|[\n.])\s*(состав\s*[:\-]?\s*[^\n<>]{20,3000})/i) ||
-          txt.match(/(?:^|[\n.])\s*(ingredients?\s*[:\-]?\s*[^\n<>]{20,3000})/i);
-  return m && __isComp(m[1]) ? __stripLead(m[1]) : '';
+  return best ? __stripLead(best) : '';
 }
 
 /* Единственный валидатор состава для всех путей. Раньше здесь был мягкий
@@ -362,10 +354,102 @@ function __desc() {
     var c = (metas[i].getAttribute('content') || '').replace(/\s+/g, ' ').trim();
     if (c.length > 40) return c.slice(0, 1200);
   }
-  var txt = document.body ? (document.body.innerText || document.body.textContent || '') : '';
-  var m = txt.match(/(?:Описание|Description)[\s\S]{20,1500}/i);
-  if (m) return m[0].replace(/\s+/g, ' ').slice(0, 1200);
-  return txt.replace(/\s+/g, ' ').slice(0, 1200);
+  return '';
+}
+
+/* Разбор строки с ценой — один на все пути: DOM, ответ площадки, JSON-LD. */
+function __parsePrice(s) {
+  var t = (s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  var m = t.match(/(\d[\d\s]*(?:[.,]\d+)?)\s*(₽|руб\.?|RUB|\$|USD|€|EUR|₸|KZT|BYN|Br)/i);
+  if (!m) return null;
+  var n = Number(m[1].replace(/\s+/g, '').replace(',', '.'));
+  if (!isFinite(n) || n <= 0 || n >= 100000000) return null;
+  return {price: n, currency: m[2].toUpperCase(), text: m[0].replace(/\s+/g, ' ')};
+}
+
+/* Символы валют для читаемой строки цены. */
+var __CURSYM = { RUB: '\u20bd', RUB2: '', USD: '$', EUR: '\u20ac', KZT: '\u20b8', BYN: 'Br' };
+
+function __money(v, cur) {
+  var num = Number(String(v === undefined || v === null ? '' : v).replace(/[^\d.,]/g, '').replace(',', '.'));
+  if (!isFinite(num) || num <= 0 || num >= 100000000) return null;
+  var c = String(cur || 'RUB').toUpperCase();
+  var n = Math.round(num);
+  return { price: n, currency: c, text: n + ' ' + (__CURSYM[c] || c) };
+}
+
+/* Цена из ответа Wildberries: salePriceU — копейки. */
+function __apiPrice() {
+  if (window.__apiP !== undefined) return window.__apiP;
+  var t = __apiText();
+  if (!t) return null;
+  window.__apiP = null;
+  if (!/wildberries\.ru/i.test(location.host)) return null;
+  try {
+    var p = ((JSON.parse(t).data || {}).products || [])[0];
+    if (p) window.__apiP = __money(p.salePriceU ? p.salePriceU / 100 : p.productPrice, 'RUB');
+  } catch (e) {}
+  return window.__apiP;
+}
+
+/* Цена из JSON-LD. На мобильной вёрстке Ozon классы генерируются («c35_6_3-a1»),
+   и замер на телефоне дал n=0 по [class*="price"] — то есть узлов цены в DOM нет
+   вовсе, а цена есть: площадка кладёт «@type":"Product" с "price" в
+   application/ld+json. Читаем текст <script> — это не обход дерева. */
+function __ldPrice() {
+  if (window.__ldP !== undefined) return window.__ldP;
+  window.__ldP = null;
+  var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+  for (var i = 0; i < scripts.length && i < 6; i++) {
+    var raw = (scripts[i].textContent || '').slice(0, 20000);
+    if (!raw) continue;
+    var root = null;
+    try { root = JSON.parse(raw); } catch (e) { continue; }
+    var stack = [root];
+    for (var s0 = 0; s0 < stack.length && s0 < 40; s0++) {
+      var cur = stack[s0];
+      if (!cur || typeof cur !== 'object') continue;
+      if (Array.isArray(cur)) {
+        for (var q = 0; q < cur.length && q < 20; q++) stack.push(cur[q]);
+        continue;
+      }
+      var off = cur.offers;
+      var list = Array.isArray(off) ? off : [off];
+      for (var k = 0; k < list.length; k++) {
+        var it = list[k];
+        if (!it || typeof it !== 'object') continue;
+        var got = __money(it.price !== undefined ? it.price : it.lowPrice, it.priceCurrency);
+        if (got) { window.__ldP = got; return got; }
+      }
+      for (var key in cur) {
+        if (!Object.prototype.hasOwnProperty.call(cur, key)) continue;
+        if (cur[key] && typeof cur[key] === 'object') stack.push(cur[key]);
+      }
+    }
+  }
+  return window.__ldP;
+}
+
+/* Последний резерв: первый лист страницы с ценой в собственном текстовом узле.
+   Только листья — textContent листа стоит O(1), поэтому дёшево даже на 40 000 узлов.
+   Порядок DOM ставит текущую цену раньше зачёркнутой. */
+function __leafPrice() {
+  if (window.__leafP !== undefined) return window.__leafP;
+  window.__leafP = null;
+  var all = document.querySelectorAll('body *');
+  window.__nodes = all.length;
+  var cap = Math.min(all.length, 4000);
+  var t0 = Date.now();
+  for (var i = 0; i < cap; i++) {
+    var el = all[i];
+    if (el.childElementCount !== 0) continue;
+    var tx = (el.firstChild && el.firstChild.nodeType === 3) ? el.firstChild.data : '';
+    if (!tx || tx.length > 24) continue;
+    var pr = __parsePrice(tx);
+    if (pr) { window.__leafP = pr; return pr; }
+    if ((i & 255) === 0 && Date.now() - t0 > 200) break;
+  }
+  return window.__leafP;
 }
 
 function __price() {
@@ -384,25 +468,50 @@ function __price() {
     if (p) return p;
   }
   var nodes = document.querySelectorAll('[itemprop="price"],[data-testid*="price" i],[class*="price" i]');
-  for (var j = 0; j < nodes.length; j++) {
-    var p2 = parse(nodes[j].getAttribute('content') || nodes[j].textContent || '');
+  var t0 = Date.now();
+  for (var j = 0, jcap = Math.min(nodes.length, 400); j < jcap; j++) {
+    var el = nodes[j];
+    /* Крупные контейнеры не читаем: textContent считает всё поддерево.
+       Порог 12, а не 3: на мобильной карточке Ozon цена лежит в узле с
+       несколькими вложенными span, и жёсткий срез обнулял цену. */
+    if (el.childElementCount > 12) continue;
+    var p2 = parse(el.getAttribute('content') || el.textContent || '');
     if (p2 && p2.price < 100000000) return p2;
+    if ((j & 63) === 0 && Date.now() - t0 > 150) break;
   }
-  var p3 = parse(document.body ? document.body.innerText : '');
-  return p3 || out;
+  var byApi = __apiPrice();
+  if (byApi) return byApi;
+  /* Прицельная сверка двух источников. Замер на телефоне: JSON-LD Ozon объявляет
+     461, а на экране 454 — площадка снимает часть по карте Ozon, и структурированные
+     данные этой скидки не видят. Пользователю нужна та цена, что он видит, поэтому
+     лист страницы в приоритете, но только когда он не расходится с JSON-LД больше
+     чем на 20 %: иначе это цена соседнего товара из блока «с этим покупают». */
+  var byLd = __ldPrice();
+  var byLeaf = __leafPrice();
+  if (byLeaf && (!byLd || Math.abs(byLeaf.price - byLd.price) <= Math.max(2, byLd.price * 0.2))) return byLeaf;
+  if (byLd) return byLd;
+  return byLeaf || out;
 }
 
 function __extractJson() {
-  var txt = document.body ? document.body.textContent : '';
-  var low = (txt.slice(0, 4000) + ' ' + document.title).toLowerCase();
+  /* Только состав: тело страницы целиком не читаем — на мобильной карточке
+     document.body.textContent/innerText вешает JS-поток WebView на десятки секунд.
+     Для «заблокировано»/«не найдено» хватает заголовка окна и H1. */
+  var __t0 = Date.now();
+  var head = (document.title || '') + ' | ' + __h1();
+  var low = head.toLowerCase();
   var blocked = false;
   for (var i = 0; i < __MARKS.length; i++) if (low.indexOf(__MARKS[i]) > -1) blocked = true;
   /* Пока ответ площадки в дороге, DOM-прозу не выдаём за состав: на Ozon в карточке
      лежит рекламный текст, он «не пустой» и затирал собой настоящий список ингредиентов. */
   var pending = window.__apiSent === 'sent' || window.__apiSent === 'pending';
   var api = __apiComp() || __ozonComp();
-  var dom = api ? '' : (__domComp() || __labelComp() || __innerTextComp() || __ldComp() || __metaComp() || __stateComp());
+  /* DOM обходим только когда API молчит и ответ не в дороге; тяжёлые обходчики
+     __labelComp (querySelectorAll('*')) и __innerTextComp (весь innerText) убраны. */
+  var dom = (api || pending) ? '' : (__domComp() || __ldComp() || __metaComp() || __stateComp());
+  var __t1 = Date.now();
   var pr = __price();
+  var __t2 = Date.now();
 
 function __h1() {
   var hs = document.querySelectorAll('h1');
@@ -428,11 +537,13 @@ function __notFound(txt) {
   return '';
 }
   return {
-    url: location.href, title: document.title, len: txt.length, blocked: blocked,
+    url: location.href, title: document.title, len: head.length, blocked: blocked,
     api: (window.__apiRaw ? 'ready' : String(window.__apiSent || '')),
     via: api ? 'tab' : (pending ? '' : (dom ? 'dom' : '')),
     composition: api || (pending ? '' : dom) || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
-    h1: __h1(), notFound: __notFound(txt)
+    h1: __h1(), notFound: __notFound(head),
+    timing: 'price=' + (__t2 - __t1) + 'ms pre=' + (__t1 - __t0) + 'ms total=' + (Date.now() - __t0) +
+            'ms nodes=' + (window.__nodes === undefined ? -1 : window.__nodes)
   };
 }
