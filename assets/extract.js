@@ -88,13 +88,24 @@ function __apiText() {
   return typeof window.__apiRaw === 'string' ? window.__apiRaw : '';
 }
 
+/* Ответ WB разбираем один раз: из одного card.json берутся и состав, и
+   категория площадки. Повторный JSON.parse на каждом попыточном прогоне —
+   лишняя работа на главном потоке. */
+function __wbJson() {
+  if (!/wildberries\.ru/i.test(location.host)) return null;
+  if (window.__wbJ !== undefined) return window.__wbJ;
+  window.__wbJ = null;
+  var t = __apiText();
+  if (t) { try { window.__wbJ = JSON.parse(t) || null; } catch (e) { window.__wbJ = null; } }
+  return window.__wbJ;
+}
+
 function __apiComp() {
   if (!/wildberries\.ru/i.test(location.host)) return '';
   if (window.__wbComp) return window.__wbComp;
-  var t = __apiText();
-  if (!t) return '';
+  var d = __wbJson();
+  if (!d) return '';
   try {
-    var d = JSON.parse(t);
     var parts = [];
     var opts = d.options || [];
     for (var i = 0; i < opts.length; i++) {
@@ -637,13 +648,77 @@ function __notFound(txt) {
   if (path === '' || path === '/') return 'главная страница';
   return '';
 }
+
+/* Категория площадки — самая надёжная подсказка для разбора: её выдаёт сама
+   карточка, а не наши догадки по составу. WB отдаёт subj_name в card.json,
+   Ozon и Маркет — в хлебных крошках. Читаем только конкретные узлы:
+   innerText у всего document вешает JS-поток WebView. */
+function __crumbs() {
+  /* Первые селекторы — настоящие хлебные крошки. Последние два — запасной
+     путь, и ему доверяем только когда ссылок немного: блок «похожие
+     товары» даёт десятки ссылок на /catalog/ и сбил бы категорию в мусор. */
+  var sels = ['nav[itemtype*="BreadcrumbList"] a', '[itemtype*="Breadcrumb"] a',
+              '[data-widget="breadcrumbs"] a', '[class*="breadcrumb"] a',
+              '[class*="breadcrumbs"] li', 'a[href*="/catalog/"]', 'a[href*="/category/"]'];
+  for (var s = 0; s < sels.length; s++) {
+    var nodes;
+    try { nodes = document.querySelectorAll(sels[s]); } catch (e) { continue; }
+    if (!nodes.length) continue;
+    if (s >= 5 && nodes.length > 12) continue;
+    var out = [];
+    for (var i = 0; i < nodes.length && out.length < 6; i++) {
+      var nd = nodes[i];
+      var href = '';
+      try { href = String(nd.getAttribute('href') || ''); } catch (e) {}
+      /* Ссылка на бренд или поиск — не ступенька категории: на Ozon первым
+         «хлебным» элементом оказалась марка «Fresh». */
+      if (/search|vendor|brand|query|promo|discount|seller/i.test(href)) continue;
+      var t = __clean(nd.textContent || '').slice(0, 60);
+      if (t.length < 2) continue;
+      if (/^(каталог|главная|ещё|еще|все|меню|товары|показать)$/i.test(t)) continue;
+      if (out.indexOf(t) >= 0) continue;
+      out.push(t);
+    }
+    /* Настоящая цепочка — минимум две ступеньки; одна найденная ссылка чаще
+       всего мусор, подобранный широким селектором. */
+    if (out.length >= 2) return out;
+  }
+  return [];
+}
+
+function __catFromUrl() {
+  var m = (location.pathname || '').match(/\/(?:catalog|category|catalogue|mag)\/([^/?#]+)/i);
+  if (!m) return [];
+  var seg = __clean(decodeURIComponent(m[1]).replace(/-\d+$/, '').replace(/[-_]+/g, ' '));
+  /* Numeric segment — это артикул (/catalog/138724829/), а не категория. */
+  if (seg.length < 3 || !/[a-z\u0430-\u044f\u0451]/i.test(seg)) return [];
+  return [seg];
+}
+
+function __cat() {
+  if (window.__catCache !== undefined) return window.__catCache;
+  var parts = [];
+  var d = __wbJson();
+  if (d) {
+    var keys = ['subj_root_name', 'subj_name', 'imt_name', 'vendor', 'brand'];
+    for (var i = 0; i < keys.length; i++) {
+      var v = d[keys[i]];
+      if (v && typeof v === 'string') parts.push(__clean(v));
+    }
+  }
+  if (!parts.length) parts = __crumbs();
+  if (!parts.length) parts = __catFromUrl();
+  window.__catCache = __clean(parts.join(' > ')).slice(0, 240);
+  return window.__catCache;
+}
+
   return {
     url: location.href, title: document.title, len: head.length, blocked: blocked,
     api: (window.__apiRaw ? 'ready' : String(window.__apiSent || '')),
     via: api ? 'tab' : (pending ? '' : (dom ? 'dom' : '')),
     composition: api || (pending ? '' : dom) || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
-    h1: __h1(), notFound: __notFound(head),
+    h1: __h1(), notFound: __notFound(head), cat: __cat(),
     /* Сколько узлов в DOM: единственный дешёвый признак «страница дорисовалась».
        innerText/textContent читать нельзя — они вешают JS-поток WebView, а len
        меряет только заголовок и при SPA-дорисовке не растёт. */
