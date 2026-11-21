@@ -89,8 +89,11 @@ public class MainActivity extends Activity {
     private String lastRiskNames = "";
     private String extractJs = "";
     private int extractAttempt = 0;
+    private int lateRound = 0;
     private String lastVerdict = "";
     private int currentTab = 0;
+    private boolean pageShown = false;
+    private int tabBeforePage = 0;
     private boolean loading = false;
     private String lastRequested = "";
     private long lastRequestedAt = 0;
@@ -99,7 +102,9 @@ public class MainActivity extends Activity {
     private final Map<String, String> ruNames = new HashMap();
     private boolean aiBusy = false;
     private volatile boolean aiStop = false;
-    private int aiBudgetSec = 45;
+    private int aiBudgetSec = 100;
+    private boolean autoAi = false;
+    boolean aiShort = false;
     private String lastTitle = "";
     private String lastComposition = "";
     private String lastPriceText = "";
@@ -125,13 +130,33 @@ public class MainActivity extends Activity {
 
         @Override // java.lang.Runnable
         public void run() {
-            long jCurrentTimeMillis = System.currentTimeMillis();
             MainActivity mainActivity = this.act;
-            String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 110, this.seconds, 4, new ReviewSink(mainActivity));
-            Log.i("ScanBase", "отзыв ИИ за " + ((System.currentTimeMillis() - jCurrentTimeMillis) / 1000) + " с: " + strGenerate);
-            this.act.aiBusy = false;
-            MainActivity mainActivity2 = this.act;
-            mainActivity2.runOnUiThread(new AiReviewUiTask(mainActivity2, strGenerate));
+            String strBest = "";
+            for (int iAttempt = 1; iAttempt <= 3; iAttempt++) {
+                final String strStatus = iAttempt == 1 ? "Пишу разбор…" : "Модель сбилась на полуслове — переписываю, попытка " + iAttempt;
+                mainActivity.runOnUiThread(new AiStatusTask(mainActivity, strStatus));
+                long jStart = System.currentTimeMillis();
+                String strGenerate = LlamaModel.generate(mainActivity, this.prompt, 190, this.seconds, 6, new ReviewSink(mainActivity));
+                String strTrimmed = strGenerate == null ? "" : strGenerate.trim();
+                Log.i("ScanBase", "отзыв ИИ, попытка " + iAttempt + ", за " + ((System.currentTimeMillis() - jStart) / 1000) + " с, " + strTrimmed.length() + " знаков: " + strTrimmed);
+                if (strTrimmed.length() > strBest.length()) {
+                    strBest = strTrimmed;
+                }
+                /* Обрывок вроде «Это кос» — не отзыв: модель то и дело бросает
+                   генерацию на первых токенах. Пользователю такое показывать
+                   нельзя, поэтому пробуем заново, а не выдаём недописанное. */
+                if (reviewIsWhole(strTrimmed)) {
+                    break;
+                }
+                if (mainActivity.aiStop) {
+                    break;
+                }
+                strBest = "";
+                Log.i("ScanBase", "слишком коротко — перегенерирую");
+            }
+            mainActivity.aiShort = !reviewIsWhole(strBest);
+            mainActivity.aiBusy = false;
+            mainActivity.runOnUiThread(new AiReviewUiTask(mainActivity, strBest));
         }
     }
 
@@ -262,6 +287,37 @@ public class MainActivity extends Activity {
 
     }
 
+    /* Анонимные new Runnable(){…} в этом файле не пишутся: d8 8.2 падает на
+       их class-файлах внутренним NPE, сборка обрывается, а старый APK остаётся
+       на месте — выглядит как «сборка прошла», хотя код не поехал. */
+    static class AutoAiTask implements Runnable {
+        private final MainActivity act;
+
+        AutoAiTask(MainActivity mainActivity) {
+            this.act = mainActivity;
+        }
+
+        @Override // java.lang.Runnable
+        public void run() {
+            this.act.startAiReview();
+        }
+    }
+
+    static class AiStatusTask implements Runnable {
+        private final MainActivity act;
+        private final String text;
+
+        AiStatusTask(MainActivity mainActivity, String str) {
+            this.act = mainActivity;
+            this.text = str;
+        }
+
+        @Override // java.lang.Runnable
+        public void run() {
+            this.act.aiBody.setText(this.text);
+        }
+    }
+
     static class ShowPieceTask implements Runnable {
         private final MainActivity act;
         private final String text;
@@ -280,29 +336,44 @@ public class MainActivity extends Activity {
     }
 
     private String aiPrompt(int i) {
-        StringBuilder sb = new StringBuilder("Товар: ");
-        sb.append(cleanTitle(this.lastTitle.isEmpty() ? this.lastComposition : this.lastTitle));
+        /* Название товара в промпт не отдаём: с ним модель каждый раз
+           начинала с бренда и таскала его по всем предложениям. Роль товара
+           играет категория — её берут из классификатора, на экране она не
+           светится. */
+        String strCat = detectCategory(nz(this.lastComposition) + " " + nz(this.lastTitle), this.lastItems);
+        StringBuilder sb = new StringBuilder("Это: ");
+        if ("material".equals(strCat)) {
+            sb.append("вещь из материала (одежда, ткань, обувь)");
+        } else if ("cosmetics".equals(strCat)) {
+            sb.append("косметика или средство гигиены");
+        } else {
+            sb.append("товар, к косметике и текстилю не относится");
+        }
         sb.append('\n');
         if (!this.lastPriceText.isEmpty()) {
             sb.append("Цена: ");
             sb.append(this.lastPriceText);
             sb.append('\n');
         }
-        StringBuilder sb2 = new StringBuilder();
-        StringBuilder sb3 = new StringBuilder();
+        StringBuilder sbGood = new StringBuilder();
+        StringBuilder sbBad = new StringBuilder();
         for (Item item : this.lastItems) {
-            String strStripPercent = stripPercent(item.name);
+            String strName = stripPercent(item.name);
             if ("высокий".equals(item.risk)) {
-                appendName(sb3, strStripPercent + roleTag(item.role));
+                appendName(sbBad, strName + roleTag(item.role));
             } else if ("низкий".equals(item.risk)) {
-                appendName(sb2, strStripPercent + roleTag(item.role));
+                appendName(sbGood, strName + roleTag(item.role));
             }
         }
         sb.append("Хорошее в составе: ");
-        sb.append(few(sb2.toString(), 3));
+        sb.append(few(sbGood.toString(), 4));
         sb.append("\nСпорное и вредное в составе: ");
-        sb.append(few(sb3.toString(), 3));
-        sb.append("\nНапиши четыре коротких предложения одним абзацем. Назови не больше одного-двух компонентов, состав не перечисляй и латинские названия не переводи. Скажи прямо: стоит брать или нет, что в нём хорошего, что спорного и чем это вредно, кому подойдёт.");
+        sb.append(few(sbBad.toString(), 4));
+        /* Формат «одним абзацем» здесь не прихоть: в этой сборке .so ответ с
+           переносами строк и подписями обрывается на первых токенах, а абзац
+           модель дописывает до конца. Порядок доводов задан явно — это и есть
+           структура, только та, которую маленькая модель выдерживает. */
+        sb.append("\nНапиши по-русски пять предложений одним абзацем, как человек, который читает составы профессионально и объясняет их другу. Порядок такой: для чего это средство; один-два компонента из строки «Хорошее» и что они делают; компонент из строки «Спорное» и чем он мешает; кому стоит пройти мимо; брать ли за эту цену и что сделать перед первым применением. Компоненты называй только те, что перечислены выше, и ровно как они написаны, без перевода. Придуманные названия, проценты и бренд не упоминай.");
         return sb.toString();
     }
 
@@ -1045,6 +1116,24 @@ public class MainActivity extends Activity {
         return !strExtractUrl.isEmpty() ? strExtractUrl : this.lastUrl;
     }
 
+    /* Отзыв считается целым по двум признакам: длина и число знаков конца
+       предложения. Один только подсчёт знаков пропускал «воду» из одного
+       предложения, а одна только длина — обрывки без точки. */
+    static boolean reviewIsWhole(String str) {
+        String strTrim = str == null ? "" : str.trim();
+        if (strTrim.length() < 150) {
+            return false;
+        }
+        int iEnds = 0;
+        for (int i = 0; i < strTrim.length(); i++) {
+            char c = strTrim.charAt(i);
+            if (c == '.' || c == '!' || c == '?') {
+                iEnds++;
+            }
+        }
+        return iEnds >= 3;
+    }
+
     private static String cutToSentence(String str) {
         String strTrim = str.trim();
         int iMax = Math.max(Math.max(strTrim.lastIndexOf(46), strTrim.lastIndexOf(33)), strTrim.lastIndexOf(63));
@@ -1108,6 +1197,45 @@ public class MainActivity extends Activity {
         }
         Matcher matcher2 = Pattern.compile("(?iu)\\b(?:www\\.)?[\\w-]+\\.[a-z]{2,}(?:/[^\\s<>\"]*)?").matcher(str.trim());
         return (!matcher2.find() || str.trim().contains(",")) ? "" : matcher2.group();
+    }
+
+    /* Артикул вместо ссылки: плошадка по умолчанию — Wildberries, потому что словом
+       «артикул» пользуются именно там. Площадку можно назвать словами. Строка с
+       несколькими числами или с прочим текстом артикулом не считается: так текст
+       состава («хлопок 80%, полиэстер 20%») не превращается в ссылку. */
+    private static String articleUrl(String str) {
+        String s = nz(str).trim();
+        if (s.isEmpty() || s.length() > 40 || s.contains("://")) {
+            return "";
+        }
+        Matcher matcher = Pattern.compile("\\d{5,12}").matcher(s);
+        if (!matcher.find()) {
+            return "";
+        }
+        String strNum = matcher.group();
+        if (matcher.find()) {
+            return "";
+        }
+        String lowerCase = s.replace(strNum, "").toLowerCase(Locale.ROOT).replaceAll("[^a-zа-яё]", "");
+        if (lowerCase.isEmpty()) {
+            return "https://www.wildberries.ru/catalog/" + strNum + "/detail.aspx";
+        }
+        if (lowerCase.contains("ozon") || lowerCase.contains("озон")) {
+            return "https://www.ozon.ru/product/" + strNum + "/";
+        }
+        if (lowerCase.contains("маркет") || lowerCase.contains("market") || lowerCase.contains("yandex") || lowerCase.contains("яндекс")) {
+            /* /card/<id> без слага у Маркета 404, а /product/<id> редиректит на
+               /card/model/0?productId=..., где Маркет рисует «такой страницы».
+               Слаг в пути не проверяется: /card/x/<id> отдаёт живую карточку. */
+            return "https://market.yandex.ru/card/x/" + strNum;
+        }
+        if (lowerCase.contains("wb") || lowerCase.contains("wildberries") || lowerCase.contains("вб")
+                || lowerCase.contains("вайлдберриз") || lowerCase.contains("артикул") || lowerCase.contains("article")
+                || lowerCase.contains("номер") || lowerCase.contains("арт") || lowerCase.equals("nm")
+                || lowerCase.equals("id") || lowerCase.equals("sku")) {
+            return "https://www.wildberries.ru/catalog/" + strNum + "/detail.aspx";
+        }
+        return "";
     }
 
     private static String few(String str, int i) {
@@ -1194,7 +1322,10 @@ public class MainActivity extends Activity {
         this.urlBox.setText(stringExtra.trim());
         open();
         if ("1".equals(intent.getStringExtra("scanbase_ai"))) {
-            this.urlBox.post(new MainActivity$$ExternalSyntheticLambda13(this));
+            /* Гонка: сразу после open() состава ещё нет, и startAiReview()
+               молча выходился по пустому разбору. Флаг доживает до момента,
+               когда разбор действительно показан. */
+            this.autoAi = true;
         }
     }
 
@@ -1585,10 +1716,17 @@ public class MainActivity extends Activity {
         showPage(false);
         String strTrim = this.urlBox.getText().toString().trim();
         if (strTrim.isEmpty()) {
-            showError("Вставь ссылку Ozon, Wildberries или Яндекс Маркет, либо текст состава.");
+            showError("Вставь ссылку Ozon, Wildberries или Яндекс Маркет, артикул товара, либо текст состава.");
             return;
         }
         String strExtractUrl = extractUrl(strTrim);
+        if (strExtractUrl.isEmpty()) {
+            String strArticle = articleUrl(strTrim);
+            if (!strArticle.isEmpty()) {
+                Log.i("ScanBase", "распознал артикул: " + strTrim + " -> " + strArticle);
+                strExtractUrl = strArticle;
+            }
+        }
         String lowerCase = strTrim.toLowerCase(Locale.ROOT);
         if (!strExtractUrl.isEmpty() || strTrim.length() <= 20 || (!strTrim.contains(",") && !strTrim.contains(";") && !strTrim.contains("%") && !strTrim.matches("(?iu).*\\d+\\s*%.*") && !lowerCase.contains("состав") && !lowerCase.contains("ingredients"))) {
             if (strExtractUrl.isEmpty()) {
@@ -1606,6 +1744,7 @@ public class MainActivity extends Activity {
             this.urlBox.setSelection(strExtractUrl.length());
             this.lastUrl = strExtractUrl;
             this.extractAttempt = 0;
+            this.lateRound = 0;
             showText("Открываю страницу и жду описание…");
             this.web.loadUrl(strExtractUrl);
             return;
@@ -1630,34 +1769,50 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void openOzon() {
-        String str;
+    /* Кнопка «В приложение»: открывает товар в приложении площадки, а когда его
+       на телефоне нет — в браузере. Раньше кнопка умела только Ozon и называлась
+       «В Ozon», а на Wildberries и Маркете отказывала. Фолбэк в браузер тоже был
+       недостижим: он стоял во внутреннем catch, куда попадало только исключение от
+       showText, а не от отсутствующего приложения. */
+    private void openInApp() {
         String strCurrentUrl = currentUrl();
-        if (strCurrentUrl.isEmpty() || !strCurrentUrl.toLowerCase(Locale.ROOT).contains("ozon")) {
-            showError("Кнопка «В Ozon» работает только для ссылок ozon.ru.");
+        if (strCurrentUrl.isEmpty()) {
+            showError("Ссылка ещё не открыта — нечего показывать приложению.");
             return;
         }
-        Matcher matcher = Pattern.compile("(\\d{6,})").matcher(strCurrentUrl);
-        if (matcher.find()) {
-            str = "https://www.ozon.ru/product/" + matcher.group(1) + "/";
-        } else {
-            str = strCurrentUrl;
+        String lowerCase = strCurrentUrl.toLowerCase(Locale.ROOT);
+        String strPackage = "";
+        String strTarget = strCurrentUrl;
+        if (lowerCase.contains("ozon")) {
+            strPackage = "ru.ozon.app.android";
+            Matcher matcher = Pattern.compile("(\\d{6,})").matcher(strCurrentUrl);
+            if (matcher.find()) {
+                strTarget = "https://www.ozon.ru/product/" + matcher.group(1) + "/";
+            }
+        } else if (lowerCase.contains("wildberries") || lowerCase.contains("wb.ru")) {
+            strPackage = "ru.wildberries";
+        } else if (lowerCase.contains("market") || lowerCase.contains("yandex") || lowerCase.contains("ya.ru")) {
+            strPackage = "ru.yandex.market";
+        }
+        if (strPackage.isEmpty()) {
+            showError("Кнопка «В приложение» работает для ссылок Ozon, Wildberries и Яндекс Маркет.");
+            return;
         }
         try {
-            Intent intent = new Intent("android.intent.action.VIEW", Uri.parse(str));
-            intent.setPackage("ru.ozon.app.android");
+            Intent intent = new Intent("android.intent.action.VIEW", Uri.parse(strTarget));
+            intent.setPackage(strPackage);
             intent.addFlags(268435456);
             startActivity(intent);
             this.lastUrl = strCurrentUrl;
-            showText("Открываю Ozon-приложение…");
+            showText("Открываю приложение площадки…");
         } catch (Exception e) {
             try {
-                showText("Не удалось открыть Ozon: " + e.getMessage());
-            } catch (Exception unused) {
-                Intent intent2 = new Intent("android.intent.action.VIEW", Uri.parse(str));
+                Intent intent2 = new Intent("android.intent.action.VIEW", Uri.parse(strTarget));
                 intent2.addFlags(268435456);
                 startActivity(intent2);
-                showText("Ozon-приложение не нашлось — открыл в браузере.");
+                showText("Приложения площадки нет — открыл в браузере.");
+            } catch (Exception e2) {
+                showError("Не удалось открыть ссылку: " + e2.getMessage());
             }
         }
     }
@@ -1991,6 +2146,10 @@ public class MainActivity extends Activity {
         String str2;
         this.aiBusy = false;
         refreshAiPanel();
+        if (this.aiShort) {
+            this.aiBody.setText("Модель трижды оборвала ответ на первых словах — показывать недописанное не буду. Попробуй ещё раз, когда телефон не нагружен; достоверный разбор лежит во вкладке «Разбор».");
+            return;
+        }
         if (str != null && !str.trim().isEmpty()) {
             StringBuilder sb = new StringBuilder(cutToSentence(str));
             if (inventedNumbers(sb.toString())) {
@@ -2030,6 +2189,10 @@ public class MainActivity extends Activity {
             return;
         }
         Log.i("ScanBase", "показываю разбор: " + str.length() + " знаков");
+        if (this.autoAi && this.lastItems != null) {
+            this.autoAi = false;
+            this.urlBox.post(new AutoAiTask(this));
+        }
         MainActivity$$ExternalSyntheticLambda8 mainActivity$$ExternalSyntheticLambda8 = new MainActivity$$ExternalSyntheticLambda8(webView, str);
         if (webView.getHeight() > 0) {
             mainActivity$$ExternalSyntheticLambda8.run();
@@ -2041,6 +2204,11 @@ public class MainActivity extends Activity {
     private void showPage(boolean z) {
         this.web.setVisibility(z ? 0 : 8);
         this.resultWeb.setVisibility(z ? 8 : 0);
+        this.pageShown = z;
+        Button button = this.pageButton;
+        if (button != null) {
+            button.setText(z ? "Скрыть" : "Страница");
+        }
     }
 
     private void showTab(int i) {
@@ -2048,7 +2216,7 @@ public class MainActivity extends Activity {
             return;
         }
         this.currentTab = i;
-        if (i == 0 && this.web != null && this.resultWeb != null) {
+        if (this.web != null && this.resultWeb != null) {
             showPage(false);
         }
         int i2 = i != 1 ? 0 : 1;
@@ -2167,14 +2335,21 @@ public class MainActivity extends Activity {
         return strReplaceAll.length() > 120 ? strReplaceAll.substring(0, 120).trim() : strReplaceAll;
     }
 
-    /** Кнопка «Страница»: только показать сайт. Обратно — «Проверить» или вкладка «Разбор». */
+    /** Кнопка «Страница»: показать сайт, повторный тап — скрыть и вернуться на прежнюю вкладку. */
     private void togglePage() {
         if (nz(this.web.getUrl()).isEmpty()) {
             showError("Страницу ещё не открывали: вставьте ссылку и нажмите «Проверить».");
             return;
         }
-        showError("Смотрите сайт? Вернуться к разбору — «Проверить» или вкладка «Разбор».");
+        if (this.pageShown) {
+            showTab(this.tabBeforePage);
+            showError("Вернуться к сайту — снова «Страница».");
+            return;
+        }
+        this.tabBeforePage = this.currentTab;
+        showTab(0);
         showPage(true);
+        showError("Скрыть страницу — снова нажмите «Страница».");
     }
 
     private static String translit(String str) {
@@ -2247,7 +2422,7 @@ public class MainActivity extends Activity {
     }
 
     public void lambda$onCreate$4(View view) {
-        openOzon();
+        openInApp();
     }
 
     public void lambda$runExtraction$0() {
@@ -2260,11 +2435,26 @@ public class MainActivity extends Activity {
             JSONObject jSONObject = new JSONObject(unwrap(str));
             String strOptString = jSONObject.optString("composition", "");
             Log.i("ScanBase", "timing " + jSONObject.optString("timing", ""));
-            Log.i("ScanBase", "attempt=" + this.extractAttempt + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " url=" + jSONObject.optString("url"));
+            Log.i("ScanBase", "attempt=" + this.extractAttempt + " late=" + this.lateRound + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " nodes=" + jSONObject.optInt("nodes") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " url=" + jSONObject.optString("url"));
             String strApi = jSONObject.optString("api", "");
             boolean zWaiting = "sent".equals(strApi) || "pending".equals(strApi);
             int iCap = zWaiting ? 9 : 5;
-            if (!strOptString.isEmpty() || this.extractAttempt >= iCap || (!zWaiting && (jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null))) {
+            if (!strOptString.isEmpty() || (!zWaiting && (jSONObject.optBoolean("blocked", false) || notFoundReason(jSONObject) != null))) {
+                report(jSONObject);
+                return;
+            }
+            if (this.extractAttempt >= iCap) {
+                /* Маркет дорисовывает карточку в разы дольше отпущенных попыток: малое число
+                   узлов значит, что страница не битая, а ещё не собралась, — даём ей длинные
+                   ожидания вместо ложного «состава нет». Узлы, а не len: len меряет только
+                   заголовок и при SPA-дорисовке не растёт. */
+                if (jSONObject.optInt("nodes", 0) < 1500 && this.lateRound < 3) {
+                    this.lateRound++;
+                    this.extractAttempt = 0;
+                    showText("Страница ещё грузится — жду (" + this.lateRound + "/3)…");
+                    this.web.postDelayed(new MainActivity$$ExternalSyntheticLambda15(this), 20000L);
+                    return;
+                }
                 report(jSONObject);
                 return;
             }
@@ -2311,7 +2501,7 @@ public class MainActivity extends Activity {
         linearLayout.setPadding(24, 24, 24, 24);
         EditText editText = new EditText(this);
         this.urlBox = editText;
-        editText.setHint("Ссылка на товар или текст состава");
+        editText.setHint("Ссылка на товар, артикул или текст состава");
         this.urlBox.setInputType(16);
         this.urlBox.setSingleLine(true);
         this.urlBox.setImeOptions(2);
@@ -2346,7 +2536,7 @@ public class MainActivity extends Activity {
         button3.setOnClickListener(new MainActivity$$ExternalSyntheticLambda3(this));
         linearLayout2.addView(button3, wrap());
         Button button4 = new Button(this);
-        button4.setText("В Ozon");
+        button4.setText("В приложение");
         button4.setAllCaps(false);
         button4.setTextSize(12.0f);
         button4.setOnClickListener(new MainActivity$$ExternalSyntheticLambda4(this));
@@ -2400,7 +2590,7 @@ public class MainActivity extends Activity {
         buildTabs(linearLayout);
         setContentView(linearLayout);
         showTab(0);
-        showText("Готово. Вставь ссылку на товар или сам текст состава и нажми «Проверить».");
+        showText("Готово. Вставь ссылку на товар, артикул (138724829 — Wildberries, «ozon 146342688», «маркет 4337272634») или сам текст состава и нажми «Проверить».");
         loadRuNames();
         handleIntent(getIntent());
     }
@@ -2442,6 +2632,7 @@ public class MainActivity extends Activity {
             Log.i("ScanBase", "ссылка уже отбита, повторный разбор не запускаю");
         } else {
             this.extractAttempt = 0;
+            this.lateRound = 0;
             lambda$lambda$runExtraction$1$1();
         }
     }
