@@ -1005,16 +1005,36 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    /* Паттерн строится из неизменного TEXTILE, поэтому компилируется один раз.
+       Прежний вид был таким:
+           while (Pattern.compile(...).matcher(str).find()) { i++; }
+       и это бесконечный цикл: каждая итерация создавала НОВЫЙ Matcher на том же
+       входе, поэтому find() всякий раз возвращал первое же совпадение. Стоило
+       слову из TEXTILE попасть в текст — и главный поток стоял насмерть
+       («зависает при разборе»). Счётчик ведёт один матчер, потолок на всякий
+       случай оставлен. */
+    private static Pattern materialPattern;
+
     private static int countMaterialWords(String str) {
-        StringBuilder sb = new StringBuilder();
-        int i = 0;
-        for (String str2 : TEXTILE) {
-            if (sb.length() > 0) {
-                sb.append('|');
-            }
-            sb.append(Pattern.quote(str2));
+        String s = nz(str);
+        if (s.isEmpty()) {
+            return 0;
         }
-        while (Pattern.compile("(?<![\\p{L}])(" + String.valueOf(sb) + ")(?![\\p{L}])", 66).matcher(str).find()) {
+        Pattern pattern = materialPattern;
+        if (pattern == null) {
+            StringBuilder sb = new StringBuilder();
+            for (String str2 : TEXTILE) {
+                if (sb.length() > 0) {
+                    sb.append('|');
+                }
+                sb.append(Pattern.quote(str2));
+            }
+            pattern = Pattern.compile("(?<![\\p{L}])(" + sb + ")(?![\\p{L}])", 66);
+            materialPattern = pattern;
+        }
+        int i = 0;
+        Matcher matcher = pattern.matcher(s);
+        while (matcher.find() && i < 500) {
             i++;
         }
         return i;
@@ -1874,13 +1894,29 @@ public class MainActivity extends Activity {
             showText("Состав найден, но не удалось разбить его на названия.\nРазбей его запятыми или открой вкладку «Отзыв ИИ» — там текст читает модель.");
             return;
         }
+        /* Страховка от зависания: разбор идёт на главном потоке и на каждое
+           название делает запрос в базу. Настоящий список компонентов редко
+           бывает длиннее пары сотен, а тысячи кусков означают, что вместо
+           состава в поле попал текст всей страницы. */
+        if (listSplitNames.size() > 400) {
+            Log.i("ScanBase", "отказ: названий слишком много — " + listSplitNames.size());
+            showText("Похоже, вместо состава захвачен текст всей страницы (" + listSplitNames.size() + " фрагментов), поэтому разбор не запущен — иначе приложение зависнет.\nСкопируй список компонентов вручную и вставь его в поле ввода.");
+            return;
+        }
+        long tStart = System.currentTimeMillis();
         ArrayList arrayList = new ArrayList();
         Iterator<String> it = listSplitNames.iterator();
         int i = 0;
+        StringBuilder missed = new StringBuilder();
         while (it.hasNext()) {
             Item itemAnalyzeItem = analyzeItem(it.next());
             if (!"не найден".equals(itemAnalyzeItem.status)) {
                 i++;
+            } else if (missed.length() > 0) {
+                missed.append(" | ");
+                missed.append(itemAnalyzeItem.name);
+            } else {
+                missed.append(itemAnalyzeItem.name);
             }
             arrayList.add(itemAnalyzeItem);
         }
@@ -1891,7 +1927,14 @@ public class MainActivity extends Activity {
         this.lastMatched = i;
         this.lastTotal = listSplitNames.size();
         Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", ""));
-        showHtml(buildHtml(jSONObject, arrayList, strOptString, strReplaceAll, strOptString3, i, jSONObject.optDouble("price", 0.0d), jSONObject.optString("currency", ""), jSONObject.optString("priceText", ""), jSONObject.optString("description", "")));
+        if (missed.length() > 0) {
+            Log.i("ScanBase", "не распознано (" + (listSplitNames.size() - i) + "): " + missed);
+        }
+        long tHtml = System.currentTimeMillis();
+        Log.i("ScanBase", "разбор " + listSplitNames.size() + " названий занял " + (tHtml - tStart) + " мс");
+        String html = buildHtml(jSONObject, arrayList, strOptString, strReplaceAll, strOptString3, i, jSONObject.optDouble("price", 0.0d), jSONObject.optString("currency", ""), jSONObject.optString("priceText", ""), jSONObject.optString("description", ""));
+        Log.i("ScanBase", "сборка html заняла " + (System.currentTimeMillis() - tHtml) + " мс, длина " + html.length());
+        showHtml(html);
     }
 
     private static String riskClass(String str) {
@@ -2216,6 +2259,7 @@ public class MainActivity extends Activity {
         try {
             JSONObject jSONObject = new JSONObject(unwrap(str));
             String strOptString = jSONObject.optString("composition", "");
+            Log.i("ScanBase", "timing " + jSONObject.optString("timing", ""));
             Log.i("ScanBase", "attempt=" + this.extractAttempt + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " url=" + jSONObject.optString("url"));
             String strApi = jSONObject.optString("api", "");
             boolean zWaiting = "sent".equals(strApi) || "pending".equals(strApi);
