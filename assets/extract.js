@@ -26,11 +26,30 @@ function __scanTabs() {
   return String(n);
 }
 
+/* card.wb.ru закрыт антиботом wbaas: без x-wbaas-token он отвечает 403 и из
+   WebView, и с ПК. Тот же состав лежит в карточке на CDN-корзины — она открыта
+   любому (access-control-allow-origin: *) и антибота не требует. Путь к корзине
+   берём из og:image самой страницы, а не вычисляем: og:image отдаёт сервер вместе
+   с SSR, поэтому он верен и для старых, и для новых номеров товаров. */
+function __wbCardUrl() {
+  try {
+    var og = document.querySelector('meta[property="og:image"], meta[name="og:image"]');
+    var u = og ? String(og.getAttribute('content') || '') : '';
+    var g = u.match(/^(https?:\/\/[^/]+\/vol\d+\/part\d+\/\d+)/);
+    if (g) return g[1] + '/info/ru/card.json';
+    var m = location.href.match(/(?:nm|id)?[\/=](\d{6,})/);
+    if (!m) return '';
+    var nm = parseInt(m[1], 10);
+    if (!nm) return '';
+    return 'https://mow-basket-cdn-31.geobasket.ru/vol' + Math.floor(nm / 100000) +
+           '/part' + Math.floor(nm / 1000) + '/' + nm + '/info/ru/card.json';
+  } catch (e) { return ''; }
+}
+
 function __apiUrl() {
   try {
     if (/wildberries\.ru/i.test(location.host)) {
-      var m = location.href.match(/(?:nm|id)?[\/=](\d{6,})/);
-      return m ? 'https://card.wb.ru/cards/v1/detail?appType=1&curr=rub&dest=-1257786&nm=' + m[1] : '';
+      return __wbCardUrl();
     }
     if (/ozon\.ru/i.test(location.host)) {
       var m2 = location.href.match(/(?:product\/.*?)(\d{6,})/) || location.pathname.match(/(\d{6,})/);
@@ -52,7 +71,9 @@ function __kickApi() {
   try {
     var x = new XMLHttpRequest();
     x.open('GET', url, true);
-    x.withCredentials = true;
+    /* Корзина отвечает access-control-allow-origin: *, а такой ответ браузер
+       с учётными данными отбрасывает («Failed to fetch») — для WB шлём без них. */
+    x.withCredentials = !/wildberries\.ru/i.test(location.host);
     x.timeout = 15000;
     x.onload = function () { try { window.__apiRaw = x.responseText || ''; } catch (e) {} };
     x.onerror = function () { window.__apiSent = 'failed'; };
@@ -69,26 +90,30 @@ function __apiText() {
 
 function __apiComp() {
   if (!/wildberries\.ru/i.test(location.host)) return '';
-  if (window.__wbComp !== undefined) return window.__wbComp;
-  window.__wbComp = '';
+  if (window.__wbComp) return window.__wbComp;
   var t = __apiText();
   if (!t) return '';
   try {
-    var p = (JSON.parse(t).data.products || [])[0];
-    if (!p) return '';
-    var lists = (p.breakdown || []).concat(p.characteristics || []);
-    for (var i = 0; i < lists.length; i++) {
-      if (lists[i] && lists[i].name && /состав/i.test(lists[i].name) && lists[i].value) {
-        /* Строка «Состав» у WB бывает и рекламной прозой, и всем описанием
-           карточки сразу. Наружу отдаём только проверенный список компонентов:
-           иначе splitNames() на телефоне разбивает страницу на тысячи кусков и
-           разбор на главном потоке вешает приложение. */
-        var v = __clean(lists[i].value);
-        if (v.length <= 6000 && __isCompList(v)) { window.__wbComp = __stripLead(v); return window.__wbComp; }
-      }
+    var d = JSON.parse(t);
+    var parts = [];
+    var opts = d.options || [];
+    for (var i = 0; i < opts.length; i++) {
+      var o = opts[i];
+      if (o && o.name && o.value && /^состав/i.test(String(o.name).trim())) parts.push(String(o.value));
     }
-    return '';
+    if (!parts.length) {
+      var cs = d.compositions || [];
+      for (var k = 0; k < cs.length; k++) if (cs[k] && cs[k].name) parts.push(String(cs[k].name));
+    }
+    var v = __clean(parts.join(', '));
+    if (!v || v.length > 6000) return '';
+    /* Короткое значение поля «Состав» берём как есть: у одежды оно и есть одно
+       («акрил 100%»), строгий список его бы отверг. Длинное проверяем валидатором,
+       иначе наружу уйдёт рекламная проза вместо списка ингредиентов. */
+    if (!__wbCompOk(v)) return '';
+    window.__wbComp = __stripLead(v);
   } catch (e) { return ''; }
+  return window.__wbComp;
 }
 
 /* Разбор ответа Ozon кэшируется: JSON.parse нескольких МБ — тоже дорогой
@@ -104,6 +129,34 @@ function __ozonComp() {
 
 function __stripLead(s) {
   return __clean(s).replace(/^\s*(?:состав(?:\s+продукта|\s+материала|\s+средства)?|ingredients?|full\s+ingredients|composition)\s*[:\-–—]\s*/i, '');
+}
+
+/* Рекламная проза выдаёт себя лексикой: обещания, действия, маркетинг. Один
+   предикат на все источники, чтобы «Состав» из карточки и «Состав» из DOM
+   отсеивались по одному правилу. */
+function __proseLike(s) {
+  return /(смягча|увлажня|увлажн|питает|питатель|обеспечив|помогает|снижает|защищ|создаёт|подходит|содерж|благодар|риска|кож|волос)/i.test(s) ||
+         /(инновационн|уникальн|текстур|формул|нот[ыае]|свежест|новинк|хит\s|продаж|подарок|доставк|скидк|акци|реклам|бренд|премиум|идеальн|интенсивн|эффект|рекоменду)/i.test(s) ||
+         /(нанесите|нанеси|втира|распредел|смой|массир|массажн|вспень|оставь|оставьте|удобно|легко|быстро)/i.test(s);
+}
+
+/* Годится ли значение поля «Состав» из карточки WB. __isCompList требует не
+   меньше трёх частей — он защищается от DOM-прозы. У карточки же источник
+   структурирован, и у одежды состав законно короткий («акрил 100%», «хлопок 80%
+   эластан 20%»), поэтому короткой строке разрешаем быть долями или перечислением,
+   но только без следов прозы и без «для лица / без парабенов». */
+function __wbCompOk(s) {
+  if (__isCompList(s)) return true;
+  s = __stripLead(s);
+  if (!s || s.length > 300) return false;
+  if (/[?!:]/.test(s) || /\s[–—-]\s/.test(s)) return false;
+  if (/\./.test(s)) return false;
+  if (__proseLike(s)) return false;
+  var parts = s.split(/[,;]+/);
+  for (var i = 0; i < parts.length; i++) {
+    if (/^(без|только|для|на|по|из|с)\s/i.test(parts[i].trim())) return false;
+  }
+  return /%/.test(s) || /[,;]/.test(s);
 }
 
 /* Чистый список компонентов, а не связный текст. Старому __isComp хватало слова
@@ -127,9 +180,7 @@ function __isCompList(s) {
   }
   if (keep < 3) return false;
   if (longish > keep * 0.2) return false;
-  if (/(смягча|увлажня|увлажн|питает|питатель|обеспечив|помогает|снижает|защищ|создаёт|подходит|содерж|благодар|риска|кож|волос)/i.test(s)) return false;
-  if (/(инновационн|уникальн|текстур|формул|нот[ыае]|свежест|новинк|хит\s|продаж|подарок|доставк|скидк|акци|реклам|бренд|премиум|идеальн|интенсивн|эффект|рекоменду)/i.test(s)) return false;
-  if (/(нанесите|нанеси|втира|распредел|смой|массир|массажн|вспень|оставь|оставьте|удобно|легко|быстро)/i.test(s)) return false;
+  if (__proseLike(s)) return false;
   return true;
 }
 
@@ -322,6 +373,56 @@ function __ldComp() {
   return '';
 }
 
+/* Площадки кладут характеристики прямо в серверный HTML, но не в видимый DOM:
+   у Яндекса-Маркета это JSON в <noframes data-apiary="patch">, у WB — пары
+   {"name":"Состав","value":"..."} в скриптах карточки. В отрисованном виде там
+   часто остаётся заглушка, а полный список ингредиентов лежит в этих островах.
+   Перебираем только inline-скрипты и узлы с data-apiary, и с бюджетом по
+   времени: на Маркете такой остров весит мегабайты. */
+function __unesc(str) {
+  try { return JSON.parse('"' + str + '"'); } catch (e) { return str; }
+}
+
+function __jsonComp() {
+  var nodes = [];
+  try {
+    /* На Маркете состав лежит внутри <template>: его текст виден только через
+       .content (DocumentFragment), а не через textContent самого узла. Шаблон один
+       и он искомый — ставим ПЕРВЫМИ, чтобы попасть в бюджет, не перебирая скрипты. */
+    var tp = document.querySelectorAll('template');
+    for (var t = 0; t < tp.length && nodes.length < 60; t++) nodes.push(tp[t]);
+    var sc = document.scripts || [];
+    for (var i = 0; i < sc.length && nodes.length < 400; i++) {
+      if (!sc[i].src) nodes.push(sc[i]);
+    }
+    var ap = document.querySelectorAll('[data-apiary]');
+    for (var k = 0; k < ap.length && nodes.length < 500; k++) nodes.push(ap[k]);
+  } catch (e) { return ''; }
+  var pats = [
+    /"name"\s*:\s*"Состав"\s*,\s*"value"\s*:\s*"((?:[^"\\]|\\.)+)"/,
+    /"value"\s*:\s*"((?:[^"\\]|\\.)+)"\s*,\s*"name"\s*:\s*"Состав"/,
+    /"(?:composition|ingredients|inci)"\s*:\s*"((?:[^"\\]|\\.)+)"/i
+  ];
+  var t0 = Date.now();
+  for (var n = 0; n < nodes.length; n++) {
+    if (Date.now() - t0 > 600) break;
+    var txt = '';
+    try { txt = (nodes[n].content ? nodes[n].content.textContent : nodes[n].textContent) || ''; } catch (e) { continue; }
+    if (txt.length < 20 || txt.length > 6000000) continue;
+    if (txt.indexOf('Состав') < 0 && txt.indexOf('omposition') < 0 && txt.indexOf('ngredients') < 0) continue;
+    for (var p = 0; p < pats.length; p++) {
+      var re = new RegExp(pats[p].source, pats[p].flags + 'g');
+      var guard = 0, m;
+      while (guard++ < 25 && (m = re.exec(txt)) !== null) {
+        var v = __clean(__unesc(m[1]));
+        if (v.length > 8 && v.length <= 6000 && __isCompList(v)) return __stripLead(v);
+        if (m.index === re.lastIndex) re.lastIndex++;
+      }
+    }
+  }
+  return '';
+}
+
 function __stateComp() {
   var found = '';
   function walk(o, depth) {
@@ -343,7 +444,7 @@ function __stateComp() {
     }
   }
   var roots = [];
-  try { roots.push(window.__INITIAL_STATE__, window.__NUXT__, window.__PRELOADED_STATE__, window.__NEXT_DATA__, window.state, window.pageData); } catch (e) {}
+  try { roots.push(window.__INITIAL_STATE__, window.__INIT_STATE__, window.__STATE__, window.__NUXT__, window.__PRELOADED_STATE__, window.__NEXT_DATA__, window.state, window.pageData); } catch (e) {}
   for (var i = 0; i < roots.length && !found; i++) walk(roots[i], 0);
   return __stripLead(found);
 }
@@ -508,7 +609,7 @@ function __extractJson() {
   var api = __apiComp() || __ozonComp();
   /* DOM обходим только когда API молчит и ответ не в дороге; тяжёлые обходчики
      __labelComp (querySelectorAll('*')) и __innerTextComp (весь innerText) убраны. */
-  var dom = (api || pending) ? '' : (__domComp() || __ldComp() || __metaComp() || __stateComp());
+  var dom = (api || pending) ? '' : (__jsonComp() || __domComp() || __ldComp() || __metaComp() || __stateComp());
   var __t1 = Date.now();
   var pr = __price();
   var __t2 = Date.now();
@@ -543,6 +644,10 @@ function __notFound(txt) {
     composition: api || (pending ? '' : dom) || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
     h1: __h1(), notFound: __notFound(head),
+    /* Сколько узлов в DOM: единственный дешёвый признак «страница дорисовалась».
+       innerText/textContent читать нельзя — они вешают JS-поток WebView, а len
+       меряет только заголовок и при SPA-дорисовке не растёт. */
+    nodes: document.getElementsByTagName('*').length,
     timing: 'price=' + (__t2 - __t1) + 'ms pre=' + (__t1 - __t0) + 'ms total=' + (Date.now() - __t0) +
             'ms nodes=' + (window.__nodes === undefined ? -1 : window.__nodes)
   };
