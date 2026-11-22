@@ -73,8 +73,15 @@ public final class Rules {
            площадки часто: одно и то же стоит в поле «Состав» и в атрибуте
            материала, а в разборе читается как два разных компонента и раздувает
            число позиций. Из пары оставляем ту, где процент объявлен. */
+        /* Перенос строки бывает двух родов: жёсткий перенос внутри одного имени
+           (текст свёрстан по колонке: «Ethylhexy» + «lglycerin») и настоящая
+           граница между компонентами. Склеиваем ТОЛЬКО перенос между строчными
+           буквами — имена INCI начинаются с заглавной, поэтому «Aqua\nGlycerin»
+           останется двумя, а «Ethylhexy\nlglycerin» соберётся в одно. Делаем это
+           ДО правила про процент: оно само вставляет \n как разделитель, и те
+           переводы склеивать нельзя. */
         LinkedHashMap<String, String> linkedHashMap = new LinkedHashMap<>();
-        for (String str2 : str.replaceAll("(?iu)^\\s*(состав|ingredients)\\s*[:\\-]?\\s*", "").replaceAll("(?iu)(%)(\\s+)", "$1\n").split("[;,\n]|\\s{2,}")) {
+        for (String str2 : str.replaceAll("(?iu)^\\s*(состав|ingredients)\\s*[:\\-]?\\s*", "").replaceAll("(?<=[a-zа-яё])\n(?=[a-zа-яё])", "").replaceAll("(?iu)(%)(\\s+)", "$1\n").split("[;,\n]|\\s{2,}")) {
             String strReplaceAll = str2.replaceAll("\\(.*?\\)", "").replaceAll("^[ .()№*]+|[ .()№*]+$", "").trim().replaceAll("\\s+", " ");
             if (strReplaceAll.length() > 2 && strReplaceAll.length() < 80 && (strReplaceAll.matches(".*[A-Za-zА-Яа-я]{3}.*") || strReplaceAll.matches("(?iu)^e\\d{3,4}$") || strReplaceAll.matches("(?iu)^ci\\s*\\d{3,5}$"))) {
                 String strKey = nameKey(strReplaceAll);
