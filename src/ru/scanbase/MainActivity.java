@@ -2252,7 +2252,7 @@ public class MainActivity extends Activity {
         return Rules.norm(str);
     }
 
-    private static String notFoundReason(JSONObject jSONObject) {
+    static String notFoundReason(JSONObject jSONObject) {
         String lowerCase = nz(jSONObject.optString("notFound", "")).toLowerCase(Locale.ROOT);
         if (!lowerCase.isEmpty()) {
             return "на странице написано «" + lowerCase + "»";
@@ -2265,18 +2265,25 @@ public class MainActivity extends Activity {
                 return "площадка сообщает: «" + jSONObject.optString("title", "") + "»";
             }
         }
-        String strReplaceFirst = lowerCase2.replaceFirst("(?i)^https?://(www\\.)?", "");
+        /* Схему снимаем любую: у chrome-error:// путь резался по «://» и
+           проверка ниже не видела ни главной страницы, ни страницы ошибки. */
+        String strReplaceFirst = lowerCase2.replaceFirst("(?i)^[a-z][a-z0-9+.-]*://(www\\.)?", "");
         int iIndexOf = strReplaceFirst.indexOf(47);
         String strSubstring = iIndexOf >= 0 ? strReplaceFirst.substring(iIndexOf) : "";
-        if (strSubstring.isEmpty() || "?".equals(strSubstring)) {
-            return "ссылка выбросила на главную страницу — карточки товара нет";
-        }
         String[] strArr2 = {"/search", "/modal", "/cart", "/basket", "/order", "/error", "/404", "/notfound", "/not-found", "/catalog?", "chrome-error://", "about:blank"};
         for (int i2 = 0; i2 < 12; i2++) {
             String str = strArr2[i2];
-            if (strSubstring.startsWith(str) || strSubstring.contains(str)) {
-                return "ссылка ведёт не на карточку товара, а в «" + strSubstring.substring(0, Math.min(strSubstring.length(), 28)) + "»";
+            /* Служебные адреса Chromium (chrome-error, about:blank) ищутся и по
+               пути, и по адресу целиком: у них путь пустой или «/». */
+            if (strSubstring.startsWith(str) || strSubstring.contains(str) || lowerCase2.contains(str)) {
+                String strShown = strSubstring.isEmpty() ? lowerCase2 : strSubstring;
+                return "ссылка ведёт не на карточку товара, а в «" + strShown.substring(0, Math.min(strShown.length(), 28)) + "»";
             }
+        }
+        /* Пустой url — это вставленный вручную текст, а не редирект на главную:
+           без проверки ссылки отказ по ней выкосил бы разбор из буфера обмена. */
+        if (!lowerCase2.isEmpty() && (strSubstring.isEmpty() || "/".equals(strSubstring) || "?".equals(strSubstring))) {
+            return "ссылка выбросила на главную страницу — карточки товара нет";
         }
         return null;
     }
@@ -2669,12 +2676,16 @@ public class MainActivity extends Activity {
         this.lastComposition = "";
         this.lastKey = "";
         String strNotFoundReason = notFoundReason(jSONObject);
-        if (strOptString.isEmpty() && strNotFoundReason != null) {
+        /* Площадка сказала «не найден» — разбор не показываем, даже если под
+           сообщением выловился какой-то состав: на такой странице это блок
+           «похожие товары» или текст ошибки, а не компоненты этой карточки. */
+        if (strNotFoundReason != null) {
             this.rejectedPath = pathOf(strOptString2);
             this.rejectedAt = SystemClock.elapsedRealtime();
-            Log.i("ScanBase", "ОТКАЗ: товар не найден — " + strNotFoundReason);
+            Log.i("ScanBase", "ОТКАЗ: товар не найден — " + strNotFoundReason + " (состав на странице: " + strOptString.length() + " знаков)");
             clearReport();
-            showText("Товар не найден.\n\nПлощадка пишет: «" + strNotFoundReason + "».\nПроверьте ссылку или откройте карточку в браузере площадки.");
+            showText("Товар не найден.\n\nПлощадка пишет: «" + strNotFoundReason + "».\nПроверьте ссылку или откройте карточку в браузере площадки."
+                    + (strOptString.isEmpty() ? "" : "\n\nТекст, похожий на состав, на этой странице есть, но брать его не буду: карточки этого товара здесь нет — это чужие компоненты или блок «похожие товары»."));
             return;
         }
         if (strOptString.isEmpty() && jSONObject.optBoolean("blocked", false)) {
@@ -2693,6 +2704,7 @@ public class MainActivity extends Activity {
         this.lastComposition = strOptString;
         List<String> listSplitNames = splitNames(strOptString);
         if (listSplitNames.isEmpty()) {
+            clearReport();
             showText("Состав найден, но не удалось разбить его на названия.\nРазбей его запятыми или открой вкладку «Отзыв ИИ» — там текст читает модель.");
             return;
         }
@@ -2702,6 +2714,7 @@ public class MainActivity extends Activity {
            состава в поле попал текст всей страницы. */
         if (listSplitNames.size() > 400) {
             Log.i("ScanBase", "отказ: названий слишком много — " + listSplitNames.size());
+            clearReport();
             showText("Похоже, вместо состава захвачен текст всей страницы (" + listSplitNames.size() + " фрагментов), поэтому разбор не запущен — иначе приложение зависнет.\nСкопируй список компонентов вручную и вставь его в поле ввода.");
             return;
         }
