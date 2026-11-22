@@ -860,11 +860,18 @@ public class MainActivity extends Activity {
         card(sb, "overall", "Итог", iClamp10);
         card(sb, "", "Цена", str5.isEmpty() ? "—" : str5, d > 0.0d ? priceCheap(d, str4) : 0);
         boolean z4 = z;
-        card(sb, "", "Доля пользы", percentShareLabel(d14, z4), (int) Math.round(d14));
-        double d16 = d2;
-        card(sb, "", "Доля риска", percentShareLabel(d16, z4), (int) Math.round(d16));
+        double[] dShare = sharesOf(list);
+        boolean zWeighted = dShare[5] > 0.0d;
+        card(sb, "", "Доля пользы", percentShareLabel(dShare[0], zWeighted), (int) Math.round(dShare[0]));
+        double d16 = dShare[1];
+        card(sb, "", "Доля риска", percentShareLabel(dShare[1], zWeighted), (int) Math.round(dShare[1]));
         sb.append("</div>");
         StringBuilder sb2 = new StringBuilder();
+        /* Цифру без знаменателя читают как приговор: пишем, среди чего считали. */
+        sb2.append("<p class='catnote'>Доли считаем по ").append((int) dShare[2]).append(" распознанным позициям: польза ")
+                .append((int) dShare[3]).append(", риск ").append((int) dShare[4]).append(zWeighted
+                        ? " — по объявленным в составе процентам." : " — по числу позиций, проценты в составе не объявлены.")
+                .append("</p>");
         String[] meta = catMeta(str13);
         /* У обуви и мебели состав разложен по деталям — без этой строки
            «шерсть» из поля «Состав» выглядит как полная чепуха. */
@@ -1178,6 +1185,34 @@ public class MainActivity extends Activity {
             strTrim = nz(str).trim();
         }
         return trim(strTrim, 90);
+    }
+
+    /* Отказ обязан прятать прежний разбор: без этого под сообщением остаются
+       оценки, таблица и отзыв ИИ про предыдущий товар, и их читают как про
+       тот, что не открылся. */
+    void clearReport() {
+        this.lastItems = null;
+        this.lastComposition = "";
+        this.lastKey = "";
+        this.lastAttrs = "";
+        this.lastCatHint = "";
+        this.lastDescription = "";
+        this.lastRiskNames = "";
+        this.lastOverall = 0;
+        this.lastUseful = 0;
+        this.lastSafe = 0;
+        this.lastCheap = 0;
+        this.lastComfort = 0;
+        this.currentTab = 0;
+        FrameLayout frameLayout = this.content;
+        if (frameLayout != null) {
+            frameLayout.setVisibility(0);
+        }
+        LinearLayout linearLayout = this.aiPanel;
+        if (linearLayout != null) {
+            linearLayout.setVisibility(8);
+        }
+        clearError();
     }
 
     private void clearError() {
@@ -2384,6 +2419,62 @@ public class MainActivity extends Activity {
         return String.format(Locale.ROOT, "%.2f", Double.valueOf(item.pct)).replace(".00", "").replace(",00", "") + "%";
     }
 
+    /* Позиция что-то делает, если она либо полезна, либо рискованна: нейтральная
+       база (растворитель, эмульгатор, регулятор кислотности) не польза и не
+       вред, и в числителе ей не место. Низкорисковый материал (дерево, хлопок,
+       силикон) считаем полезным: для вещи из материала это и есть хороший
+       профиль. */
+    static boolean isUsefulItem(Item item) {
+        String strRole = nz(item.role);
+        if (strRole.contains("актив") || strRole.contains("увлажнение") || strRole.contains("смягчение")
+                || strRole.contains("натуральное") || strRole.contains("целлюлозное") || strRole.contains("эластичность")) {
+            return true;
+        }
+        return "материал".equals(item.status) && "низкий".equals(item.risk);
+    }
+
+    static boolean isKnownItem(Item item) {
+        return !nz(item.role).contains("не распознан") && !"не найден".equals(item.status);
+    }
+
+    /* {польза %, риск %, распознано, полезных, рискованных, 1 если считали по
+       объявленным процентам} */
+    static double[] sharesOf(List<Item> list) {
+        int iKnown = 0;
+        int iUseful = 0;
+        int iRisky = 0;
+        double dPctKnown = 0.0d;
+        double dPctUseful = 0.0d;
+        double dPctRisky = 0.0d;
+        for (Item item : list) {
+            if (!isKnownItem(item)) {
+                continue;
+            }
+            iKnown++;
+            dPctKnown += item.pct;
+            if (isUsefulItem(item)) {
+                iUseful++;
+                dPctUseful += item.pct;
+            }
+            if ("высокий".equals(item.risk) || "средний".equals(item.risk)) {
+                iRisky++;
+                dPctRisky += item.pct;
+            }
+        }
+        if (iKnown == 0) {
+            return new double[]{0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d};
+        }
+        /* Проценты печатают далеко не все составы, и частично объявленные
+           (один компонент из двадцати) считать весомее числа нельзя:
+           знаменатель должен покрывать хотя бы половину списка. */
+        if (dPctKnown >= 50.0d) {
+            return new double[]{(dPctUseful * 100.0d) / dPctKnown, (dPctRisky * 100.0d) / dPctKnown,
+                    (double) iKnown, (double) iUseful, (double) iRisky, 1.0d};
+        }
+        return new double[]{((double) iUseful) * 100.0d / ((double) iKnown), ((double) iRisky) * 100.0d / ((double) iKnown),
+                (double) iKnown, (double) iUseful, (double) iRisky, 0.0d};
+    }
+
     private static String percentShareLabel(double d, boolean z) {
         int iClamp = clamp((int) Math.round(d));
         return (z ? "" : "≈") + iClamp + "%";
@@ -2582,15 +2673,17 @@ public class MainActivity extends Activity {
             this.rejectedPath = pathOf(strOptString2);
             this.rejectedAt = SystemClock.elapsedRealtime();
             Log.i("ScanBase", "ОТКАЗ: товар не найден — " + strNotFoundReason);
-            showPage(false);
-            showError("Товар не найден — проверьте ссылку");
+            clearReport();
+            showText("Товар не найден.\n\nПлощадка пишет: «" + strNotFoundReason + "».\nПроверьте ссылку или откройте карточку в браузере площадки.");
             return;
         }
         if (strOptString.isEmpty() && jSONObject.optBoolean("blocked", false)) {
+            clearReport();
             showText("Площадка " + strReplaceAll + " показала проверку «вы не робот».\n\nОткрой эту же ссылку в обычном браузере и вставь текст состава в поле сверху — разберу его.");
             return;
         }
         if (strOptString.isEmpty()) {
+            clearReport();
             showText("На странице " + strReplaceAll + " не найдено поле «Состав».\nВсего текста: " + jSONObject.optInt("len") + " знаков.");
             return;
         }
@@ -2640,7 +2733,8 @@ public class MainActivity extends Activity {
         this.lastMatched = i;
         this.lastTotal = listSplitNames.size();
         String[] catDbg = catInfo();
-        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", "") + " cat=" + catDbg[0] + ("1".equals(catDbg[1]) ? "/kids" : "") + " conf=" + catDbg[3] + " why=" + catDbg[2] + " plat=" + trim(this.lastCatHint, 60) + " attrs=" + trim(this.lastAttrs, 80));
+        double[] dDbg = sharesOf(arrayList);
+        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", "") + " cat=" + catDbg[0] + ("1".equals(catDbg[1]) ? "/kids" : "") + " conf=" + catDbg[3] + " why=" + catDbg[2] + " plat=" + trim(this.lastCatHint, 60) + " attrs=" + trim(this.lastAttrs, 80) + " share=" + Math.round(dDbg[0]) + "/" + Math.round(dDbg[1]) + " known=" + ((int) dDbg[2]) + " mode=" + (dDbg[5] > 0.0d ? "pct" : "count"));
         if (missed.length() > 0) {
             Log.i("ScanBase", "не распознано (" + (listSplitNames.size() - i) + "): " + missed);
         }
