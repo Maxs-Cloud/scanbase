@@ -100,6 +100,71 @@ function __wbJson() {
   return window.__wbJ;
 }
 
+/* У обуви, мебели и посуды поле «Состав» часто почти пустое («шерсть»), а
+   настоящий набор материалов разложен по деталям: верх, подкладка, стелька,
+   подошва. Берём и то и другое: список материалов едет в разбор, а подписи
+   «что из чего» — отдельным полём attrs, чтобы не ломать разбор названий. */
+/* Имя детали: «Материал верха обуви» → «верх», «Материал помпона» → «помпон».
+   «Декоративные элементы» и «Фактура материала» материалами не считаем. */
+var __WB_MAT = [[/верха?$/, 'верх'], [/подкладк.*$/, 'подкладка'], [/подошв.*$/, 'подошва'],
+                [/стел[ьь]к.*$/, 'стелька'], [/наполнител.*$/, 'наполнитель'],
+                [/утеплител.*$/, 'утеплитель'], [/фурнитур.*$/, 'фурнитура'],
+                [/мембран.*$/, 'мембрана'], [/ткан.*$/, 'ткань'], [/помпон.*$/, 'помпон'],
+                [/заст[её]жк.*$/, 'застёжка'], [/утеплител.*$/, 'утеплитель']];
+
+function __wbMatName(name) {
+  var s = String(name).trim().toLowerCase().replace(/\s+(обуви|изделия|товара|изделию)$/i, '');
+  var tail = s.replace(/^материал\s+/i, '');
+  if (tail === s && !/^(верх|подкладк|подошв|стел[ьь]к|наполнител|утеплител|фурнитур|мембран|ткан|помпон)/.test(s)) return '';
+  for (var i = 0; i < __WB_MAT.length; i++) if (__WB_MAT[i][0].test(tail)) return __WB_MAT[i][1];
+  return tail && tail.length > 2 && tail.length <= 18 ? tail : '';
+}
+
+/* Один проход по card.json: и состав, и материалы деталей. */
+function __wbParts() {
+  if (window.__wbPartsC !== undefined) return window.__wbPartsC;
+  var res = { comp: [], attrs: [] };
+  window.__wbPartsC = res;
+  var d = __wbJson();
+  if (!d) return res;
+  var opts = d.options || [];
+  var seen = {};
+  var mats = [];
+  function add(v) {
+    var k = String(v).trim().toLowerCase();
+    if (!k || seen[k]) return;
+    seen[k] = 1;
+    res.comp.push(String(v).trim());
+  }
+  for (var i = 0; i < opts.length; i++) {
+    var o = opts[i];
+    if (!o || !o.name || !o.value) continue;
+    var nm = String(o.name).trim();
+    var val = __clean(String(o.value));
+    if (!val) continue;
+    if (/^состав/i.test(nm)) { add(val); continue; }
+    var label = __wbMatName(nm);
+    if (!label) continue;
+    res.attrs.push(label + ' — ' + val.replace(/[;]+/g, ',').replace(/\s*,\s*/g, ', '));
+    var bits = val.split(/[;,]+/);
+    for (var b = 0; b < bits.length; b++) { var t = __clean(bits[b]); if (t) mats.push(t); }
+  }
+  if (!res.comp.length) {
+    var cs = d.compositions || [];
+    for (var k = 0; k < cs.length; k++) if (cs[k] && cs[k].name) add(__clean(String(cs[k].name)));
+  }
+  /* Поле «Состав» — источник первый: оно короткое и точное, а детали
+     (подкладка, помпон) в разборе дали бы лишние «не найдено». Материалы
+     деталей идут в состав только когда своего поля «Состав» нет вовсе. */
+  if (!res.comp.length) for (var m = 0; m < mats.length; m++) add(mats[m]);
+  return res;
+}
+
+function __wbAttrs() {
+  if (!/wildberries\.ru/i.test(location.host)) return '';
+  try { return __clean(__wbParts().attrs.join('; ')).slice(0, 240); } catch (e) { return ''; }
+}
+
 function __apiComp() {
   if (!/wildberries\.ru/i.test(location.host)) return '';
   if (window.__wbComp) return window.__wbComp;
@@ -107,15 +172,8 @@ function __apiComp() {
   if (!d) return '';
   try {
     var parts = [];
-    var opts = d.options || [];
-    for (var i = 0; i < opts.length; i++) {
-      var o = opts[i];
-      if (o && o.name && o.value && /^состав/i.test(String(o.name).trim())) parts.push(String(o.value));
-    }
-    if (!parts.length) {
-      var cs = d.compositions || [];
-      for (var k = 0; k < cs.length; k++) if (cs[k] && cs[k].name) parts.push(String(cs[k].name));
-    }
+    var got = __wbParts();
+    for (var i = 0; i < got.comp.length; i++) parts.push(got.comp[i]);
     var v = __clean(parts.join(', '));
     if (!v || v.length > 6000) return '';
     /* Короткое значение поля «Состав» берём как есть: у одежды оно и есть одно
@@ -146,7 +204,10 @@ function __stripLead(s) {
    предикат на все источники, чтобы «Состав» из карточки и «Состав» из DOM
    отсеивались по одному правилу. */
 function __proseLike(s) {
-  return /(смягча|увлажня|увлажн|питает|питатель|обеспечив|помогает|снижает|защищ|создаёт|подходит|содерж|благодар|риска|кож|волос)/i.test(s) ||
+  /* «кожа» и «волосы» признаком прозы не считаем: у обуви и одежды это
+   материалы («искусственная кожа»), а рекламная фраза и без того попадается
+   на глагол («увлажняет кожу», «подходит для волос»). */
+  return /(смягча|увлажня|увлажн|питает|питатель|обеспечив|помогает|снижает|защищ|создаёт|подходит|содерж|благодар|риска)/i.test(s) ||
          /(инновационн|уникальн|текстур|формул|нот[ыае]|свежест|новинк|хит\s|продаж|подарок|доставк|скидк|акци|реклам|бренд|премиум|идеальн|интенсивн|эффект|рекоменду)/i.test(s) ||
          /(нанесите|нанеси|втира|распредел|смой|массир|массажн|вспень|оставь|оставьте|удобно|легко|быстро)/i.test(s);
 }
@@ -167,7 +228,11 @@ function __wbCompOk(s) {
   for (var i = 0; i < parts.length; i++) {
     if (/^(без|только|для|на|по|из|с)\s/i.test(parts[i].trim())) return false;
   }
-  return /%/.test(s) || /[,;]/.test(s);
+  if (/%/.test(s) || /[,;]/.test(s)) return true;
+  /* Одно-два слова без процентов — тоже состав: у WB обувь и текстиль часто
+     значатся как «шерсть», «кожа», «ТЭП». Цифры отсекаем: «3 см» — размер, не
+     материал. */
+  return s.length <= 60 && !/\d/.test(s) && s.split(/\s+/).length <= 4;
 }
 
 /* Чистый список компонентов, а не связный текст. Старому __isComp хватало слова
@@ -718,7 +783,7 @@ function __cat() {
     via: api ? 'tab' : (pending ? '' : (dom ? 'dom' : '')),
     composition: api || (pending ? '' : dom) || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
-    h1: __h1(), notFound: __notFound(head), cat: __cat(),
+    h1: __h1(), notFound: __notFound(head), cat: __cat(), attrs: __wbAttrs(),
     /* Сколько узлов в DOM: единственный дешёвый признак «страница дорисовалась».
        innerText/textContent читать нельзя — они вешают JS-поток WebView, а len
        меряет только заголовок и при SPA-дорисовке не растёт. */
