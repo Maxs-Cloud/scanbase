@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -68,16 +69,16 @@ public class MainActivity extends Activity {
     static final String[] WOOL_MATERIAL = {"шерсть", "wool", "кашемир", "cashmere"};
     static final String[] HUMECTANT = {"glycerin", "глицерин", "hyaluron", "гиалурон", "panthenol", "пантенол", "urea", "мочевина", "betaine", "бетаин", "propylene glycol", "butylene glycol", "pentylene glycol", "propanediol", "sodium pca", "aloe", "алоэ"};
     static final String[] ACTIVE = {"niacinamide", "ниацинамид", "retinol", "ретинол", "peptide", "пептид", "ceramide", "церамид", "salicylic", "салицил", "azelaic", "азелаин", "vitamin c", "ascorbic", "аскорбин", "tocopherol", "токоферол", "centella", "центелла", "adenosine", "аденозин", "zinc", "цинк", "aha", "bha", "hyaluron", "гиалурон"};
-    static final String[] EMOLLIENT = {"squalane", "сквалан", "caprylic", "триглицерид", "oil", "масло", "butyrospermum", "ши", "cetearyl", "цетеариловый", "isopropyl myristate", "dimethicone", "диметикон", "shea", "jojoba", "жожоба"};
-    static final String[] SURFACTANT = {"sodium lauryl sulfate", "sodium laureth sulfate", "sls", "sles", "cocamidopropyl betaine"};
-    static final String[] PRESERVATIVE = {"phenoxyethanol", "phenethyl alcohol", "ethylhexylglycerin", "methylparaben", "propylparaben", "benzyl alcohol", "sodium benzoate", "potassium sorbate"};
-    static final String[] FRAGRANCE = {"parfum", "fragrance", "отдушка", "linalool", "limonene"};
+    static final String[] EMOLLIENT = {"squalane", "сквалан", "caprylic", "триглицерид", "oil", "масло", "butyrospermum", "ши", "cetearyl", "цетеариловый", "isopropyl myristate", "dimethicone", "диметикон", "shea", "jojoba", "жожоба", "цетиловый спирт", "стеариловый спирт", "миристиловый спирт", "цетеариловый спирт", "beeswax", "пчелиный воск", "ozokerite", "цера синтетика", "изопропилмиристат", "изопропилпальмитат", "caprylic/capric triglyceride", "cetyl alcohol", "stearyl alcohol", "myristyl alcohol", "cetearyl alcohol", "behenyl alcohol", "lanolin alcohol", "olus oil", "vegetable oil"};
+    static final String[] SURFACTANT = {"sodium lauryl sulfate", "sodium laureth sulfate", "sls", "sles", "cocamidopropyl betaine", "ammonium lauryl sulfate", "tea-lauryl", "sodium coco sulfate", "cocoyl", "lauroyl", "decyl glucoside", "coco glucoside", "caprylyl/capryl glucoside", "sodium cocoyl glutamate", "sodium lauroyl sarcosinate", "disodium laureth sulfosuccinate", "sodium cocoyl isethionate", "guar hydroxypropyltrimonium", "лаурил сульфат", "лаурет сульфат", "коко сульфат", "кокамид", "кокоил", "лауроил", "глюкозид", "саркозинат", "глутамат кокоил", "сульфосукцинат", "изетионат", "мыло", "калийевое мыло", "натриевое мыло", "моющее средство", "поверхностно-активн"};
+    static final String[] PRESERVATIVE = {"phenoxyethanol", "phenethyl alcohol", "ethylhexylglycerin", "methylparaben", "propylparaben", "benzyl alcohol", "sodium benzoate", "potassium sorbate", "dehydroacetic acid", "benzoic acid", "sorbic acid", "salicylic acid", "caprylyl glycol", "1,2-hexanediol", "chlorphenesin", "dmdm hydantoin", "феноксиэтанол", "фенэтиловый спирт", "парабен", "бензиловый спирт", "бензоат натрия", "сорбат калия", "сорбиновая кислота", "бензойная кислота", "дегидроуксусная кислота", "салициловая кислота", "каприлилгликоль", "хлорфенезин", "консервирующее вещество", "консервант", "isothiazolinone", "изотиазолинон", "diazolidinyl", "imidazolidinyl"};
+    static final String[] FRAGRANCE = {"parfum", "fragrance", "отдушка", "aroma", "flavor", "linalool", "limonene", "citronellol", "geraniol", "coumarin", "citral", "eugenol", "isoeugenol", "farnesol", "amyl cinnamal", "hexyl cinnamal", "benzyl salicylate", "cinnamyl alcohol", "anise alcohol", "линалоол", "лимонен", "цитронеллол", "гераниол", "кумарин", "цитраль", "евгенол", "изоэвгенол", "фарнезол", "амилкоричный альдегид", "гексилкоричный альдегид", "салицилат бензила", "коричный спирт", "анизовый спирт", "ароматизатор", "парфюмерная композиция", "отдушка парфюмерная"};
     static final String[] COLORANT = {"ci 77", "ci 75", "ci 74", "ci 15", "ci 42"};
     static final String[] SILICONE = {"dimethicone", "диметикон", "cyclomethicone", "siloxane"};
     static final String[] POLYMER = {"acrylates", "acrylate", "vp copolymer", "polymer", "carbomer"};
-    static final String[] SOLVENT = {"water", "aqua", "alcohol", "butylene glycol", "pentylene glycol"};
-    static final String[] HIGH_RISK = {"methylisothiazolinone", "methylchloroisothiazolinone", "formaldehyde", "formalin", "imidazolidinyl urea", "diazolidinyl urea", "quaternium-15", "dmdm hydantoin", "sodium lauryl sulfate", "sodium laureth sulfate", "paraben"};
-    static final String[] MED_RISK = {"parfum", "fragrance", "отдушка", "alcohol denat", "denatured alcohol", "ci 77", "ci 75", "peg-", "ppg-", "lanolin"};
+    static final String[] SOLVENT = {"water", "aqua", "alcohol", "butylene glycol", "pentylene glycol", "propylene glycol", "propanediol", "ethanol", "alcohol denat", "isopropyl alcohol", "isopropanol", "glycerin", "вода", "вода дистиллированная", "вода очищенная", "спирт этиловый", "спирт денат", "денат", "изопропиловый спирт", "пропиленгликоль", "бутиленгликоль", "пентиленгликоль", "пропандиол", "растворитель"};
+    static final String[] HIGH_RISK = {"methylisothiazolinone", "methylchloroisothiazolinone", "formaldehyde", "formalin", "imidazolidinyl urea", "diazolidinyl urea", "quaternium-15", "dmdm hydantoin", "methyldibromo glutamine", "2-bromo-2-nitropropane-1,3-diol", "metil izotiazolinon", "метилизотиазолинон", "метилхлоризотиазолинон", "формальдегид", "формалин", "имидазолидинил", "диазолидинил", "кватерниум-15", "донор формальдегида"};
+    static final String[] MED_RISK = {"parfum", "fragrance", "отдушка", "alcohol denat", "denatured alcohol", "ci 77", "ci 75", "peg-", "ppg-", "lanolin", "sodium lauryl sulfate", "sodium laureth sulfate", "sls", "sles", "лаурил сульфат", "лаурет сульфат", "спирт денат", "денат", "ланолин", "пэг-", "полиэтиленгликоль", "этоксилат", "paraben", "парабен"};
     static final String[] CHEAP = {"water", "aqua", "glycerin", "sodium chloride", "cetearyl alcohol", "stearic acid", "palmitic acid", "cetyl alcohol", "butylene glycol", "propylene glycol", "хлопок", "cotton", "полиэстер", "polyester"};
     static final String[] EXPENSIVE = {"peptide", "пептид", "retinol", "ретинол", "hyaluron", "гиалурон", "ceramide", "церамид", "tocopherol", "токоферол", "ascorbic", "аскорбин", "centella", "центелла", "adenosine", "аденозин", "squalane", "сквалан", "шерсть", "wool", "кашемир", "cashmere"};
     private static final Pattern PRICE = Pattern.compile("(?iu)(\\d[\\d\\s\\u00a0]*(?:[.,]\\d+)?)\\s*(?:₽|руб(?:ль|ля|лей|лем)?\\.?|RUB|\\$|USD|€|EUR)");
@@ -1095,9 +1096,12 @@ public class MainActivity extends Activity {
         return Math.max(0, Math.min(100, i));
     }
 
-    private static void classify(Item item) {
+    static void classify(Item item) {
         String lowerCase = item.name.toLowerCase(Locale.ROOT);
-        if (containsAny(lowerCase, TEXTILE)) {
+        if (containsAny(lowerCase, HIGH_RISK)) {
+            item.role = "консервант";
+            item.risk = "высокий";
+        } else if (containsAny(lowerCase, TEXTILE)) {
             item.role = materialRole(lowerCase);
             item.status = "материал";
             item.risk = materialRisk(lowerCase);
@@ -1900,14 +1904,61 @@ public class MainActivity extends Activity {
     }
 
     private String joinRuNames(List<String> list) {
-        StringBuilder sb = new StringBuilder();
+        /* Одно вещество часто пришло и латиницей, и по-русски («Glycerin» и
+           «глицерин»): по-русски имена совпадают, и в приговоре компонент
+           перечислен дважды — читается как два разных. */
+        LinkedHashSet linkedHashSet = new LinkedHashSet();
         for (int i = 0; i < list.size(); i++) {
-            if (i > 0) {
+            String strRuName = ruName(stripPercent(list.get(i)));
+            if (!strRuName.isEmpty()) {
+                linkedHashSet.add(strRuName);
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Object object : linkedHashSet) {
+            if (sb.length() > 0) {
                 sb.append(", ");
             }
-            sb.append(ruName(stripPercent(list.get(i))));
+            sb.append((String) object);
         }
         return sb.toString();
+    }
+
+    /* Сворачивает позиции, которые по-русски называются одинаково: остаётся
+       первая, но берётся объявленный процент, худший риск и уточнение названия.
+       Ключи приходят извне, чтобы метод можно было проверить на десктопе. */
+    static List<Item> mergeByKey(List<Item> list, String[] strKeys) {
+        LinkedHashMap linkedHashMap = new LinkedHashMap();
+        for (int i = 0; i < list.size(); i++) {
+            Item item = list.get(i);
+            String strKey = nz(i < strKeys.length ? strKeys[i] : "").toLowerCase(Locale.ROOT);
+            if (strKey.isEmpty()) {
+                linkedHashMap.put("\u0000" + i, item);
+                continue;
+            }
+            Item itemKept = (Item) linkedHashMap.get(strKey);
+            if (itemKept == null) {
+                linkedHashMap.put(strKey, item);
+            } else {
+                if (itemKept.pct <= 0.0d && item.pct > 0.0d) {
+                    itemKept.pct = item.pct;
+                }
+                if (riskRank(item.risk) > riskRank(itemKept.risk)) {
+                    itemKept.risk = item.risk;
+                }
+                if (nz(itemKept.note).isEmpty() && !nz(item.note).isEmpty()) {
+                    itemKept.note = item.note;
+                }
+                if ("не найден".equals(itemKept.status) && !"не найден".equals(item.status)) {
+                    itemKept.status = item.status;
+                    itemKept.role = item.role;
+                    itemKept.catalog = item.catalog;
+                    itemKept.food = item.food;
+                    itemKept.law = item.law;
+                }
+            }
+        }
+        return new ArrayList(linkedHashMap.values());
     }
 
     /* JADX INFO: Access modifiers changed from: private */
@@ -2730,8 +2781,31 @@ public class MainActivity extends Activity {
             }
             arrayList.add(itemAnalyzeItem);
         }
+        int iTotal = listSplitNames.size();
+        String[] strKeys = new String[arrayList.size()];
+        for (int iKey = 0; iKey < arrayList.size(); iKey++) {
+            strKeys[iKey] = norm(ruName(stripPercent(((Item) arrayList.get(iKey)).name)));
+        }
+        List<Item> listMerged = mergeByKey(arrayList, strKeys);
+        if (listMerged.size() != arrayList.size()) {
+            Log.i("ScanBase", "повторов в составе: было " + arrayList.size() + ", стало " + listMerged.size());
+            int iKnown = 0;
+            missed.setLength(0);
+            for (Item item2 : (List<Item>) listMerged) {
+                if ("не найден".equals(item2.status)) {
+                    if (missed.length() > 0) {
+                        missed.append(" | ");
+                    }
+                    missed.append(item2.name);
+                } else {
+                    iKnown++;
+                }
+            }
+            i = iKnown;
+            iTotal = listMerged.size();
+        }
         this.lastJson = jSONObject;
-        this.lastItems = arrayList;
+        this.lastItems = listMerged;
         this.lastTitle = jSONObject.optString("title", "");
         this.lastDescription = jSONObject.optString("description", "");
         this.lastCatHint = jSONObject.optString("cat", "");
@@ -2739,16 +2813,16 @@ public class MainActivity extends Activity {
         this.lastCat = null;
         this.lastPriceText = jSONObject.optString("priceText", "");
         this.lastMatched = i;
-        this.lastTotal = listSplitNames.size();
+        this.lastTotal = iTotal;
         String[] catDbg = catInfo();
         double[] dDbg = sharesOf(arrayList);
-        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", "") + " cat=" + catDbg[0] + ("1".equals(catDbg[1]) ? "/kids" : "") + " conf=" + catDbg[3] + " why=" + catDbg[2] + " plat=" + trim(this.lastCatHint, 60) + " attrs=" + trim(this.lastAttrs, 80) + " share=" + Math.round(dDbg[0]) + "/" + Math.round(dDbg[1]) + " known=" + ((int) dDbg[2]) + " mode=" + (dDbg[5] > 0.0d ? "pct" : "count"));
+        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + iTotal + " matched=" + i + " price=" + jSONObject.optString("priceText", "") + " cat=" + catDbg[0] + ("1".equals(catDbg[1]) ? "/kids" : "") + " conf=" + catDbg[3] + " why=" + catDbg[2] + " plat=" + trim(this.lastCatHint, 60) + " attrs=" + trim(this.lastAttrs, 80) + " share=" + Math.round(dDbg[0]) + "/" + Math.round(dDbg[1]) + " known=" + ((int) dDbg[2]) + " mode=" + (dDbg[5] > 0.0d ? "pct" : "count"));
         if (missed.length() > 0) {
-            Log.i("ScanBase", "не распознано (" + (listSplitNames.size() - i) + "): " + missed);
+            Log.i("ScanBase", "не распознано (" + (iTotal - i) + "): " + missed);
         }
         long tHtml = System.currentTimeMillis();
-        Log.i("ScanBase", "разбор " + listSplitNames.size() + " названий занял " + (tHtml - tStart) + " мс");
-        String html = buildHtml(jSONObject, arrayList, strOptString, strReplaceAll, strOptString3, i, jSONObject.optDouble("price", 0.0d), jSONObject.optString("currency", ""), jSONObject.optString("priceText", ""), jSONObject.optString("description", ""));
+        Log.i("ScanBase", "разбор " + iTotal + " названий занял " + (tHtml - tStart) + " мс");
+        String html = buildHtml(jSONObject, listMerged, strOptString, strReplaceAll, strOptString3, i, jSONObject.optDouble("price", 0.0d), jSONObject.optString("currency", ""), jSONObject.optString("priceText", ""), jSONObject.optString("description", ""));
         Log.i("ScanBase", "сборка html заняла " + (System.currentTimeMillis() - tHtml) + " мс, длина " + html.length());
         showHtml(html);
     }
