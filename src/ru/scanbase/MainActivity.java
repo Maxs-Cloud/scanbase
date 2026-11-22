@@ -888,6 +888,16 @@ public class MainActivity extends Activity {
         sb2.append(" из ");
         sb2.append(size);
         sb2.append(" компонентов.</p>");
+        /* Состав мог дойти только из карточки площадки, когда сама страница
+           товара не открылась: предупреждаем, а не молчим — карточка бывает и по
+           снятой с продажи позиции. */
+        String strCardName = nz(jSONObject.optString("cardName", ""));
+        if (!strCardName.isEmpty() && ("tab".equals(str3) || "api".equals(str3))
+                && cardOverlap(strOptString, strCardName) == 0) {
+            Log.i("ScanBase", "название карточки не совпало со страницей: карточка «" + trim(strCardName, 50)
+                    + "», страница «" + trim(strOptString, 50) + "»");
+            sb2.append("<p class='warn'><b>Состав взят из карточки площадки, а не со страницы:</b> на открытой странице этого товара нет — карточка может относиться к позиции, снятой с продажи. Сверьте название заголовка с тем, что вы открывали.</p>");
+        }
         if (!arrayList2.isEmpty()) {
             sb2.append("<p>Полезные или нейтральные: ");
             sb2.append(esc(joinRuNames(arrayList2)));
@@ -2332,6 +2342,37 @@ public class MainActivity extends Activity {
             return "ссылка выбросила на главную страницу — карточки товара нет";
         }
         return null;
+    }
+
+    /* Карточка WB приходит из корзины даже когда страница товара — заглушка или
+       404: состав доходит, а разбираемого товара на экране нет (живьём: по
+       несуществующему id разбор показывал чехол для телефона). Живая карточка
+       печатает своё название и в заголовке страницы, поэтому считаем совпавшие
+       слова; ноль совпадений — страница про другой товар или про ничего. */
+    static int cardOverlap(String strTitle, String strCardName) {
+        String[] strArrTitle = titleWords(strTitle);
+        int i = 0;
+        for (String str : titleWords(strCardName)) {
+            for (String str2 : strArrTitle) {
+                if (str.equals(str2)) {
+                    i++;
+                    break;
+                }
+            }
+        }
+        return i;
+    }
+
+    /* Слова от четырёх знаков: они же отсекает и служебные «для», «из», «на». */
+    static String[] titleWords(String str) {
+        String[] strArr = nz(str).toLowerCase(Locale.ROOT).split("[^a-zа-яё0-9]+");
+        java.util.ArrayList<String> arrayList = new java.util.ArrayList<>();
+        for (String str2 : strArr) {
+            if (str2.length() >= 4) {
+                arrayList.add(str2);
+            }
+        }
+        return arrayList.toArray(new String[0]);
     }
 
     private static String nz(String str) {

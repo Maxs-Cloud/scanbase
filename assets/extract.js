@@ -169,6 +169,20 @@ function __wbAttrs() {
   try { return __clean(__wbParts().attrs.join('; ')).slice(0, 240); } catch (e) { return ''; }
 }
 
+/* Название из корзины нужно отдельной строкой: страница WB бывает заглушкой
+   (или 404), а карточку корзина отдаёт и по снятой с продажи позиции. Тогда
+   состав доходит, а товара на странице нет — сверяем название карточки с
+   заголовком страницы. */
+function __wbName() {
+  if (!/wildberries\.ru/i.test(location.host)) return '';
+  try {
+    var d = __wbJson();
+    /* Название корзины лежит в imt_name; name встречается в старых карточках. */
+    var s = d ? (d.imt_name || d.name || '') : '';
+    return __clean(String(s)).slice(0, 160);
+  } catch (e) { return ''; }
+}
+
 function __apiComp() {
   if (!/wildberries\.ru/i.test(location.host)) return '';
   if (window.__wbComp) return window.__wbComp;
@@ -795,6 +809,7 @@ function __cat() {
     composition: api || (pending ? '' : dom) || '',
     description: __desc(), price: pr.price || 0, currency: pr.currency || '', priceText: pr.text || '',
     h1: __h1(), notFound: __notFound(head), cat: __cat(), attrs: __wbAttrs(),
+    cardName: __wbName(),
     /* Сколько узлов в DOM: единственный дешёвый признак «страница дорисовалась».
        innerText/textContent читать нельзя — они вешают JS-поток WebView, а len
        меряет только заголовок и при SPA-дорисовке не растёт. */
