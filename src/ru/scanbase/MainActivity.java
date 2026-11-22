@@ -867,11 +867,6 @@ public class MainActivity extends Activity {
         card(sb, "", "Доля риска", percentShareLabel(dShare[1], zWeighted), (int) Math.round(dShare[1]));
         sb.append("</div>");
         StringBuilder sb2 = new StringBuilder();
-        /* Цифру без знаменателя читают как приговор: пишем, среди чего считали. */
-        sb2.append("<p class='catnote'>Доли считаем по ").append((int) dShare[2]).append(" распознанным позициям: польза ")
-                .append((int) dShare[3]).append(", риск ").append((int) dShare[4]).append(zWeighted
-                        ? " — по объявленным в составе процентам." : " — по числу позиций, проценты в составе не объявлены.")
-                .append("</p>");
         String[] meta = catMeta(str13);
         /* У обуви и мебели состав разложен по деталям — без этой строки
            «шерсть» из поля «Состав» выглядит как полная чепуха. */
@@ -3106,7 +3101,7 @@ public class MainActivity extends Activity {
             JSONObject jSONObject = new JSONObject(unwrap(str));
             String strOptString = jSONObject.optString("composition", "");
             Log.i("ScanBase", "timing " + jSONObject.optString("timing", ""));
-            Log.i("ScanBase", "attempt=" + this.extractAttempt + " late=" + this.lateRound + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " nodes=" + jSONObject.optInt("nodes") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " url=" + jSONObject.optString("url"));
+            Log.i("ScanBase", "attempt=" + this.extractAttempt + " late=" + this.lateRound + " via=" + jSONObject.optString("via") + " len=" + jSONObject.optInt("len") + " nodes=" + jSONObject.optInt("nodes") + " blocked=" + jSONObject.optBoolean("blocked") + " compLen=" + strOptString.length() + " title=\"" + trim(jSONObject.optString("title", ""), 50) + "\" url=" + jSONObject.optString("url"));
             String strApi = jSONObject.optString("api", "");
             boolean zWaiting = "sent".equals(strApi) || "pending".equals(strApi);
             int iCap = zWaiting ? 9 : 5;

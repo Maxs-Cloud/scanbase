@@ -3,6 +3,7 @@ package ru.scanbase;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -67,14 +68,29 @@ public final class Rules {
     }
 
     public static List<String> splitNames(String str) {
-        ArrayList arrayList = new ArrayList();
+        /* Ключ — название без процента и знаков препинания: «кожа 100%» и «кожа»
+           это один компонент, а «соль» и «соль морская» — разные. Повтор едет из
+           площадки часто: одно и то же стоит в поле «Состав» и в атрибуте
+           материала, а в разборе читается как два разных компонента и раздувает
+           число позиций. Из пары оставляем ту, где процент объявлен. */
+        LinkedHashMap<String, String> linkedHashMap = new LinkedHashMap<>();
         for (String str2 : str.replaceAll("(?iu)^\\s*(состав|ingredients)\\s*[:\\-]?\\s*", "").replaceAll("(?iu)(%)(\\s+)", "$1\n").split("[;,\n]|\\s{2,}")) {
             String strReplaceAll = str2.replaceAll("\\(.*?\\)", "").replaceAll("^[ .()№*]+|[ .()№*]+$", "").trim().replaceAll("\\s+", " ");
             if (strReplaceAll.length() > 2 && strReplaceAll.length() < 80 && (strReplaceAll.matches(".*[A-Za-zА-Яа-я]{3}.*") || strReplaceAll.matches("(?iu)^e\\d{3,4}$") || strReplaceAll.matches("(?iu)^ci\\s*\\d{3,5}$"))) {
-                arrayList.add(strReplaceAll);
+                String strKey = nameKey(strReplaceAll);
+                String strPrev = linkedHashMap.get(strKey);
+                if (strPrev == null || (strPrev.indexOf(37) < 0 && strReplaceAll.indexOf(37) >= 0)) {
+                    linkedHashMap.put(strKey, strReplaceAll);
+                }
             }
         }
-        return arrayList;
+        return new ArrayList(linkedHashMap.values());
+    }
+
+    public static String nameKey(String str) {
+        /* Снимаем только объявленную долю (число с знаком %): у добавок вроде
+           E901/E903 цифры — это само название, их трогать нельзя. */
+        return nz(str).toLowerCase(java.util.Locale.ROOT).replaceAll("(?iu)\\d+(?:[.,]\\d+)?\\s*%", "").replaceAll("[^a-zа-яё0-9]", "");
     }
 
     public static String translit(String str) {
