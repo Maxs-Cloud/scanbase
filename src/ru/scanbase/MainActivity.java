@@ -109,6 +109,7 @@ public class MainActivity extends Activity {
     private String lastComposition = "";
     private String lastDescription = "";
     private String lastCatHint = "";
+    private String lastAttrs = "";
     private String[] lastCat = null;
     private String lastPriceText = "";
     private int lastMatched = 0;
@@ -351,6 +352,9 @@ public class MainActivity extends Activity {
         sb.append("На что смотреть в такой категории: ").append(catAiNote(strCat)).append('\n');
         if ("1".equals(cat[1])) {
             sb.append("Товар детский: отдушки, красители, фталаты и бисфенол A важнее, чем во взрослом товаре.\n");
+        }
+        if (!this.lastAttrs.isEmpty()) {
+            sb.append("Материалы по частям: ").append(this.lastAttrs).append('\n');
         }
         if (!this.lastPriceText.isEmpty()) {
             sb.append("Цена: ");
@@ -859,6 +863,11 @@ public class MainActivity extends Activity {
         sb.append("</div>");
         StringBuilder sb2 = new StringBuilder();
         String[] meta = catMeta(str13);
+        /* У обуви и мебели состав разложен по деталям — без этой строки
+           «шерсть» из поля «Состав» выглядит как полная чепуха. */
+        if (!this.lastAttrs.isEmpty()) {
+            sb2.append("<p><b>Материалы по частям:</b> ").append(esc(this.lastAttrs)).append("</p>");
+        }
         /* Вместо прежнего «это косметический состав» на любой товар — что именно
            разбираем и почему решили, что товар относится к этой категории. */
         sb2.append("<p>").append(esc(meta[2])).append("</p>");
@@ -2472,12 +2481,13 @@ public class MainActivity extends Activity {
         this.lastTitle = jSONObject.optString("title", "");
         this.lastDescription = jSONObject.optString("description", "");
         this.lastCatHint = jSONObject.optString("cat", "");
+        this.lastAttrs = trim(jSONObject.optString("attrs", ""), 240);
         this.lastCat = null;
         this.lastPriceText = jSONObject.optString("priceText", "");
         this.lastMatched = i;
         this.lastTotal = listSplitNames.size();
         String[] catDbg = catInfo();
-        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", "") + " cat=" + catDbg[0] + ("1".equals(catDbg[1]) ? "/kids" : "") + " conf=" + catDbg[3] + " why=" + catDbg[2] + " plat=" + trim(this.lastCatHint, 60));
+        Log.i("ScanBase", "report via=" + strOptString3 + " host=" + strReplaceAll + " names=" + listSplitNames.size() + " matched=" + i + " price=" + jSONObject.optString("priceText", "") + " cat=" + catDbg[0] + ("1".equals(catDbg[1]) ? "/kids" : "") + " conf=" + catDbg[3] + " why=" + catDbg[2] + " plat=" + trim(this.lastCatHint, 60) + " attrs=" + trim(this.lastAttrs, 80));
         if (missed.length() > 0) {
             Log.i("ScanBase", "не распознано (" + (listSplitNames.size() - i) + "): " + missed);
         }
@@ -2986,7 +2996,7 @@ public class MainActivity extends Activity {
         buildTabs(linearLayout);
         setContentView(linearLayout);
         showTab(0);
-        showText("Готово. Вставь ссылку на товар, артикул (138724829 — Wildberries, «ozon 146342688», «маркет 4337272634») или сам текст состава и нажми «Проверить».");
+        showText("Введите ссылку или артикул товара");
         loadRuNames();
         handleIntent(getIntent());
     }
