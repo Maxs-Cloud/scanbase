@@ -217,6 +217,7 @@ public class MainActivity extends Activity {
         boolean catalog;
         String food;
         String func;
+        String hazard;
         List<String[]> law = new ArrayList();
         String name = "";
         String note = "";
@@ -290,6 +291,7 @@ public class MainActivity extends Activity {
         boolean catalog;
         String food;
         String func;
+        String hazard;
         List<String[]> law;
 
         private Row() {
@@ -506,6 +508,7 @@ public class MainActivity extends Activity {
             item.catalog = rowLookup2.catalog;
             item.food = rowLookup2.food;
             item.func = rowLookup2.func;
+            item.hazard = rowLookup2.hazard;
             if (!rowLookup2.law.isEmpty()) {
                 item.status = "ограничен";
             } else if (rowLookup2.catalog) {
@@ -1188,22 +1191,67 @@ public class MainActivity extends Activity {
         if (containsAny(lowerCase, MED_RISK) && "низкий".equals(item.risk)) {
             item.risk = "средний";
         }
-        if (item.law.isEmpty()) {
-            return;
+        if (!item.law.isEmpty()) {
+            double dMaxConc = maxConc(item.law);
+            if (isProhibited(item.law)) {
+                /* Внесён в список запрещённого (Annex II / Прил 1): в косметике его
+                   быть не должно — это не «разрешено в малой дозе», а тревога. */
+                item.status = "с ограничением";
+                item.risk = "высокий";
+            } else if (dMaxConc <= 0.0d || item.pct <= dMaxConc + 1.0E-4d) {
+                item.status = "с ограничением";
+                item.risk = containsAny(lowerCase, strArr) ? "высокий" : "средний";
+            } else {
+                item.status = "превышение";
+                item.risk = "высокий";
+            }
         }
-        double dMaxConc = maxConc(item.law);
-        if (isProhibited(item.law)) {
-            /* Внесён в список запрещённого (Annex II / Прил 1): в косметике его
-               быть не должно — это не «разрешено в малой дозе», а тревога. */
-            item.status = "с ограничением";
-            item.risk = "высокий";
-        } else if (dMaxConc <= 0.0d || item.pct <= dMaxConc + 1.0E-4d) {
-            item.status = "с ограничением";
-            item.risk = containsAny(lowerCase, strArr) ? "высокий" : "средний";
-        } else {
-            item.status = "превышение";
-            item.risk = "высокий";
+        /* Гармонизированная классификация CLP (Annex VI) по CAS — это пол риска:
+           вещество-канцероген не может быть «низким» только потому, что в косметике
+           оно разрешено в дозе. Понижать уже выставленный риск не будем. */
+        if (item.hazard != null && !item.hazard.isEmpty()) {
+            String strClp = clpRisk(item.hazard);
+            if (strClp != null) {
+                item.risk = worseRisk(item.risk, strClp);
+            }
+            item.note = (item.note == null || item.note.isEmpty() ? "" : item.note + " · ")
+                    + "классификация CLP: " + item.hazard;
         }
+    }
+
+    /* Класс опасности CLP → уровень потребительского риска. Только вредность для
+       здоровья; физические (горючесть, взрыв) и экоклассы риск не двигают. */
+    static String clpRisk(String hazard) {
+        if (hazard == null || hazard.isEmpty()) {
+            return null;
+        }
+        String[] high = {"Carc. 1A", "Carc. 1B", "Muta. 1A", "Muta. 1B", "Repr. 1A", "Repr. 1B",
+            "Asp. Tox. 1", "Acute Tox. 1", "Acute Tox. 2", "Acute Tox. 3", "STOT RE 1", "Skin Corr. 1A"};
+        String[] med = {"Carc. 2", "Muta. 2", "Repr. 2", "Acute Tox. 4", "Skin Sens.", "Resp. Sens.",
+            "Eye Dam. 1", "Eye Irrit. 2", "Skin Irrit. 2", "Skin Corr. 1B", "Skin Corr. 1C",
+            "STOT SE 3", "STOT RE 2"};
+        for (String s : high) {
+            if (hazard.contains(s)) {
+                return "высокий";
+            }
+        }
+        for (String s : med) {
+            if (hazard.contains(s)) {
+                return "средний";
+            }
+        }
+        return null;
+    }
+
+    static String worseRisk(String a, String b) {
+        return rank(a) >= rank(b) ? a : b;
+    }
+
+    private static int rank(String risk) {
+        if ("высокий".equals(risk)) return 3;
+        if ("средний".equals(risk)) return 2;
+        if ("низкий".equals(risk)) return 1;
+        return 0;
     }
 
     private static boolean isProhibited(List<String[]> law) {
@@ -2283,6 +2331,15 @@ public class MainActivity extends Activity {
                 addLaw(row, linkedHashSet, cEa.getString(0), cEa.getString(1), cEa.getString(2), cEa.getString(3));
             }
             cEa.close();
+            /* Гармонизированная классификация CLP по тому же CAS: берём первую
+               попавшуюся запись — это свойство вещества, а не продукта. */
+            if (row.hazard == null) {
+                Cursor cClp = this.db.rawQuery("SELECT hazard FROM clp_hazard WHERE cas=?", new String[]{cas});
+                if (cClp.moveToFirst()) {
+                    row.hazard = cClp.getString(0);
+                }
+                cClp.close();
+            }
         }
         if (row.law.isEmpty() && !row.catalog && row.food == null) {
             return null;
