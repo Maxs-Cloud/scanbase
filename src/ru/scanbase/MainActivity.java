@@ -2677,6 +2677,13 @@ public class MainActivity extends Activity {
             showError("Вставь ссылку Ozon, Wildberries или Яндекс Маркет, артикул товара, либо текст состава.");
             return;
         }
+        /* EAN-8/EAN-13 с верной контрольной цифрой — это штрихкод: сначала ищем
+           реальный состав товара в Open Beauty/Food Facts, и только если товара
+           там нет — пробуем открыть как артикул маркетплейса. */
+        if (isEan(strTrim)) {
+            handleBarcode(strTrim);
+            return;
+        }
         String strExtractUrl = extractUrl(strTrim);
         if (strExtractUrl.isEmpty()) {
             String strArticle = articleUrl(strTrim);
@@ -3738,6 +3745,129 @@ public class MainActivity extends Activity {
             }
         }
         Log.i("ScanBase", "карточка WB нативно не получена: " + strNm);
+    }
+
+    /* EAN-8/EAN-13: ровно 8 или 13 цифр и верная контрольная цифра. Это отличает
+       штрихкод от произвольного артикула маркетплейса (тот любой длины). */
+    static boolean isEan(String s) {
+        if (s == null) {
+            return false;
+        }
+        String t = s.trim();
+        int n = t.length();
+        if (n != 8 && n != 13) {
+            return false;
+        }
+        for (int i = 0; i < n; i++) {
+            if (!Character.isDigit(t.charAt(i))) {
+                return false;
+            }
+        }
+        int[] w = n == 13 ? new int[]{1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3} : new int[]{3, 1, 3, 1, 3, 1, 3};
+        int sum = 0;
+        for (int i = 0; i < w.length; i++) {
+            sum += (t.charAt(i) - '0') * w[i];
+        }
+        return (10 - sum % 10) % 10 == (t.charAt(n - 1) - '0');
+    }
+
+    /* Штрихкод → реальный состав из Open Beauty/Food Facts (тот же report, что и
+       для текста). Не нашли — откат к артикулу маркетплейса. Сеть вне главного
+       потока, разбор возвращаем через runOnUiThread. */
+    private void handleBarcode(String strEan) {
+        this.loading = true;
+        showText("Ищу товар по штрихкоду " + esc(strEan) + " …");
+        new Thread(() -> {
+            final String[] res = fetchBarcode(strEan);
+            runOnUiThread(() -> {
+                loading = false;
+                if (res != null && !res[1].isEmpty()) {
+                    try {
+                        JSONObject j = new JSONObject();
+                        j.put("composition", res[1]);
+                        j.put("title", res[0]);
+                        j.put("url", "штрихкод " + strEan);
+                        j.put("via", "barcode");
+                        j.put("len", res[1].length());
+                        report(j);
+                    } catch (Exception e) {
+                        showError("Не удалось разобрать ответ по штрихкоду.");
+                    }
+                    return;
+                }
+                String strArticle = articleUrl(strEan);
+                if (!strArticle.isEmpty()) {
+                    urlBox.setText(strArticle);
+                    open();
+                } else {
+                    showError("Товар со штрихкодом " + strEan + " не найден в Open Beauty/Food Facts, и как артикул маркетплейса не открывается.");
+                }
+            });
+        }).start();
+    }
+
+    /* OBF (косметика) в приоритете, затем OFF (еда). Ответ v2 вложен: товар под
+       ключом "product"; проекция ?fields= ненадёжна, берём полный ответ. Английский
+       состав в приоритете, иначе общий ingredients_text. */
+    String[] fetchBarcode(String strEan) {
+        for (String strHost : new String[]{"world.openbeautyfacts.org", "world.openfoodfacts.org"}) {
+            String strBody = httpGet("https://" + strHost + "/api/v2/product/" + strEan);
+            if (strBody == null || !strBody.startsWith("{")) {
+                continue;
+            }
+            try {
+                JSONObject j = new JSONObject(strBody);
+                if (j.optInt("status", 0) == 0) {
+                    continue;
+                }
+                JSONObject p = j.optJSONObject("product");
+                if (p == null) {
+                    continue;
+                }
+                String strComp = p.optString("ingredients_text_en", "");
+                if (strComp.isEmpty()) {
+                    strComp = p.optString("ingredients_text", "");
+                }
+                if (strComp.isEmpty()) {
+                    continue;
+                }
+                Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + ": " + strComp.length() + " знаков");
+                return new String[]{p.optString("product_name", ""), strComp};
+            } catch (Exception unused) {
+            }
+        }
+        return null;
+    }
+
+    private String httpGet(String strUrl) {
+        HttpURLConnection httpURLConnection = null;
+        try {
+            httpURLConnection = (HttpURLConnection) new URL(strUrl).openConnection();
+            httpURLConnection.setConnectTimeout(5000);
+            httpURLConnection.setReadTimeout(8000);
+            httpURLConnection.setRequestProperty("User-Agent", "ScanBase/1.0");
+            if (httpURLConnection.getResponseCode() != 200) {
+                return null;
+            }
+            java.io.InputStream inputStream = httpURLConnection.getInputStream();
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] bArr = new byte[8192];
+            while (true) {
+                int i = inputStream.read(bArr);
+                if (i <= 0) {
+                    break;
+                }
+                out.write(bArr, 0, i);
+            }
+            inputStream.close();
+            return out.toString("UTF-8");
+        } catch (Exception unused) {
+            return null;
+        } finally {
+            if (httpURLConnection != null) {
+                httpURLConnection.disconnect();
+            }
+        }
     }
 
     /* Запрос к API площадки стартует вместе с навигацией и идёт мимо главного потока,
