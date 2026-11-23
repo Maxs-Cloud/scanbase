@@ -11,8 +11,8 @@ rm -rf "$STAGE" && mkdir -p "$STAGE/obj" "$STAGE/classes" "$STAGE/apk/assets" "$
 "$BT/aapt2" compile --dir "$P/res" -o "$STAGE/res.zip"
 "$BT/aapt2" link -o "$STAGE/app.apk" -I "$PLATFORM" --manifest "$P/AndroidManifest.xml" "$STAGE/res.zip" \
     --auto-add-overlay
-javac -nowarn -encoding UTF-8 -Xlint:-options -source 11 -target 11 -classpath "$PLATFORM" -d "$STAGE/obj" $(find "$P/src" -name '*.java')
-"$BT/d8" --lib "$PLATFORM" --min-api 24 --output "$STAGE/classes" $(find "$STAGE/obj" -name '*.class')
+javac -nowarn -encoding UTF-8 -Xlint:-options -source 11 -target 11 -classpath "$PLATFORM:$P/lib/zxing-core-3.5.3.jar" -d "$STAGE/obj" $(find "$P/src" -name '*.java')
+"$BT/d8" --lib "$PLATFORM" --lib "$P/lib/zxing-core-3.5.3.jar" --min-api 24 --output "$STAGE/classes" $(find "$STAGE/obj" -name '*.class')
 cp "$STAGE/classes/classes.dex" "$STAGE/apk/classes.dex"
 cp "$P/assets/"* "$STAGE/apk/assets/"
 cp "$P/lib/arm64-v8a/"* "$STAGE/apk/lib/arm64-v8a/"

@@ -1,14 +1,18 @@
 package ru.scanbase;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -3421,6 +3425,102 @@ public class MainActivity extends Activity {
         return expandBySpace(base).size() > base.size();
     }
 
+    private static final int REQ_CAMERA = 101;
+    private static final int REQ_GALLERY = 102;
+    private Uri cameraPhotoUri;
+
+    private void showScanDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Сканировать штрихкод")
+                .setItems(new String[]{"📷 Камера", "🖼 Галерея"}, (d, which) -> {
+                    if (which == 0) launchCamera();
+                    else launchGallery();
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void launchCamera() {
+        try {
+            File photo = new File(getExternalFilesDir(null), "scan.jpg");
+            cameraPhotoUri = Uri.fromFile(photo);
+            Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri);
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                startActivityForResult(intent, REQ_CAMERA);
+            } else {
+                showError("Камера недоступна.");
+            }
+        } catch (Exception e) {
+            showError("Не удалось открыть камеру: " + e.getMessage());
+        }
+    }
+
+    private void launchGallery() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("image/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Выбери фото штрихкода"), REQ_GALLERY);
+        } catch (Exception e) {
+            showError("Галерея недоступна.");
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK) return;
+        Uri uri = null;
+        if (requestCode == REQ_CAMERA) {
+            uri = cameraPhotoUri;
+        } else if (requestCode == REQ_GALLERY && data != null) {
+            uri = data.getData();
+        }
+        if (uri == null) return;
+        String code = decodeBarcode(uri);
+        if (code != null && !code.isEmpty()) {
+            this.urlBox.setText(code);
+            open();
+        } else {
+            showError("Штрихкод не найден на фото. Попробуй крупнее и без бликов, или введи код вручную.");
+        }
+    }
+
+    private String decodeBarcode(Uri uri) {
+        try {
+            Bitmap bmp;
+            if ("file".equals(uri.getScheme())) {
+                bmp = BitmapFactory.decodeFile(uri.getPath());
+            } else {
+                InputStream is = getContentResolver().openInputStream(uri);
+                bmp = BitmapFactory.decodeStream(is);
+                if (is != null) is.close();
+            }
+            if (bmp == null) return null;
+            int w = bmp.getWidth(), h = bmp.getHeight();
+            int[] pixels = new int[w * h];
+            bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+            com.google.zxing.LuminanceSource src = new com.google.zxing.RGBLuminanceSource(w, h, pixels);
+            com.google.zxing.BinaryBitmap bb = new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(src));
+            java.util.EnumMap<com.google.zxing.DecodeHintType, Object> hints = new java.util.EnumMap<>(com.google.zxing.DecodeHintType.class);
+            hints.put(com.google.zxing.DecodeHintType.TRY_HARDER, Boolean.TRUE);
+            hints.put(com.google.zxing.DecodeHintType.POSSIBLE_FORMATS, java.util.Arrays.asList(
+                    com.google.zxing.BarcodeFormat.EAN_13, com.google.zxing.BarcodeFormat.EAN_8,
+                    com.google.zxing.BarcodeFormat.UPC_A, com.google.zxing.BarcodeFormat.QR_CODE,
+                    com.google.zxing.BarcodeFormat.CODE_128));
+            com.google.zxing.MultiFormatReader reader = new com.google.zxing.MultiFormatReader();
+            reader.setHints(hints);
+            com.google.zxing.Result result = reader.decode(bb);
+            return result.getText();
+        } catch (com.google.zxing.NotFoundException e) {
+            return null;
+        } catch (Exception e) {
+            Log.i("ScanBase", "decode error: " + e);
+            return null;
+        }
+    }
+
     private void startAiReview() {
         String str = this.lastComposition;
         if (str == null || str.isEmpty()) {
@@ -3731,6 +3831,12 @@ public class MainActivity extends Activity {
         button4.setTextSize(12.0f);
         button4.setOnClickListener(new MainActivity$$ExternalSyntheticLambda4(this));
         linearLayout2.addView(button4, wrap());
+        Button btnScan = new Button(this);
+        btnScan.setText("📷 Сканер");
+        btnScan.setAllCaps(false);
+        btnScan.setTextSize(12.0f);
+        btnScan.setOnClickListener(v -> showScanDialog());
+        linearLayout2.addView(btnScan, wrap());
         HorizontalScrollView horizontalScrollView = new HorizontalScrollView(this);
         horizontalScrollView.addView(linearLayout2, wrap());
         linearLayout.addView(horizontalScrollView, match());
