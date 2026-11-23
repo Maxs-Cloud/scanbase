@@ -2740,6 +2740,9 @@ public class MainActivity extends Activity {
         clearError();
         showPage(false);
         String strTrim = this.urlBox.getText().toString().trim();
+        if (strTrim.indexOf(92) >= 0) {
+            strTrim = strTrim.replace("\\n", "\n").replace("\\r", "\r").replace("\\t", " ").replace("\\\\", "\\");
+        }
         if (strTrim.isEmpty()) {
             showError("Вставь ссылку Ozon, Wildberries или Яндекс Маркет, артикул товара, либо текст состава.");
             return;
