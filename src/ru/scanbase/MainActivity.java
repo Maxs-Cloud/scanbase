@@ -216,6 +216,7 @@ public class MainActivity extends Activity {
     static class Item {
         boolean catalog;
         String food;
+        String foodName;
         String func;
         String hazard;
         List<String[]> law = new ArrayList();
@@ -290,6 +291,7 @@ public class MainActivity extends Activity {
     private static class Row {
         boolean catalog;
         String food;
+        String foodName;
         String func;
         String hazard;
         List<String[]> law;
@@ -507,6 +509,7 @@ public class MainActivity extends Activity {
             item.law = rowLookup2.law;
             item.catalog = rowLookup2.catalog;
             item.food = rowLookup2.food;
+            item.foodName = rowLookup2.foodName;
             item.func = rowLookup2.func;
             item.hazard = rowLookup2.hazard;
             if (!rowLookup2.law.isEmpty()) {
@@ -515,11 +518,16 @@ public class MainActivity extends Activity {
                 item.status = "CosIng";
             } else if (rowLookup2.food != null) {
                 item.status = "добавка";
+            } else if (rowLookup2.foodName != null) {
+                item.status = "еда";
             } else {
                 item.status = "найден";
             }
         }
         classify(item);
+        if ("еда".equals(item.status) && "—".equals(item.role)) {
+            item.role = "пищевой продукт";
+        }
         if ("не найден".equals(item.status) && !"не распознан".equals(item.role)) {
             item.status = "по категории";
         }
@@ -1152,7 +1160,7 @@ public class MainActivity extends Activity {
         } else if (containsAny(lowerCase, SOLVENT)) {
             item.role = "растворитель";
             item.risk = "низкий";
-        } else if (item.law.isEmpty() && !item.catalog && item.food == null && householdOf(lowerCase) != null) {
+        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && householdOf(lowerCase) != null) {
             /* Бытовая химия: роль и риск берём из своего словаря, а не из
                косметического — у ПАВ и щёлочи другие нормировки. */
             String[] strArrTech = householdOf(lowerCase);
@@ -1160,7 +1168,7 @@ public class MainActivity extends Activity {
             item.status = "бытовая химия";
             item.risk = strArrTech[2];
             item.note = strArrTech[3];
-        } else if (item.law.isEmpty() && !item.catalog && item.food == null && materialOf(lowerCase) != null) {
+        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && materialOf(lowerCase) != null) {
             /* Только то, чего нет в косметической базе: иначе материал мог бы
                перекрыть регламентное ограничение на реальный ингредиент. */
             String[] strArrMaterial = materialOf(lowerCase);
@@ -1168,7 +1176,7 @@ public class MainActivity extends Activity {
             item.status = "материал";
             item.risk = strArrMaterial[2];
             item.note = strArrMaterial[3];
-        } else if (!item.catalog && item.law.isEmpty() && item.food == null) {
+        } else if (!item.catalog && item.law.isEmpty() && item.food == null && item.foodName == null) {
             item.role = "не распознан";
             item.risk = "неизвестно";
         } else {
@@ -1650,10 +1658,10 @@ public class MainActivity extends Activity {
         }
         if (iFood >= 3) {
             iArr[iFoodIdx] = iArr[iFoodIdx] + 3;
-            strArrWhy[iFoodIdx] = "в составе несколько пищевых добавок из базы";
+            strArrWhy[iFoodIdx] = "в составе несколько пищевых продуктов и добавок из базы";
         } else if (iFood >= 1) {
             iArr[iFoodIdx] = iArr[iFoodIdx] + 2;
-            strArrWhy[iFoodIdx] = "в составе есть пищевая добавка из базы";
+            strArrWhy[iFoodIdx] = "в составе есть пищевые продукты или добавки из базы";
         } else if (countENumbers(lowerCase3) >= 2) {
             iArr[iFoodIdx] = iArr[iFoodIdx] + 2;
             strArrWhy[iFoodIdx] = "в составе номера E";
@@ -1768,7 +1776,7 @@ public class MainActivity extends Activity {
         }
         int i = 0;
         for (Item item : list) {
-            if (zCatalog ? item.catalog : item.food != null) {
+            if (zCatalog ? item.catalog : (item.food != null || item.foodName != null)) {
                 i++;
             }
         }
@@ -2169,6 +2177,7 @@ public class MainActivity extends Activity {
                     itemKept.role = item.role;
                     itemKept.catalog = item.catalog;
                     itemKept.food = item.food;
+                    itemKept.foodName = item.foodName;
                     itemKept.law = item.law;
                 }
             }
@@ -2353,6 +2362,17 @@ public class MainActivity extends Activity {
             row.food = cursorRawQuery3.getString(0);
         }
         cursorRawQuery3.close();
+        /* Обычные продукты (свёкла, мука, сахар) — не добавки и не косметика.
+           Тот же единый поиск: если слово нашлось в пищевой таксономии,
+           это тоже распознанный компонент, а не «не найден». */
+        Cursor cFood = this.db.rawQuery("SELECT display, e FROM food_ingredients WHERE name=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT)});
+        if (cFood.moveToFirst()) {
+            row.foodName = cFood.getString(0);
+            if (row.food == null) {
+                row.food = cFood.getString(1);
+            }
+        }
+        cFood.close();
         /* Присоединение списков ЕС/ЕАЭС по CAS: точно, без ложных срабатываний на
            «грязных» юридических именах («Lidocaine (INN)», «…and its salts»). Даёт
            и «запрещено», которого нет в inci_index: напр. гидрохинон там только
@@ -2379,7 +2399,7 @@ public class MainActivity extends Activity {
                 cClp.close();
             }
         }
-        if (row.law.isEmpty() && !row.catalog && row.food == null) {
+        if (row.law.isEmpty() && !row.catalog && row.food == null && row.foodName == null) {
             return null;
         }
         return row;
@@ -3375,12 +3395,15 @@ public class MainActivity extends Activity {
         return ("с ограничением".equals(item.status) || "средний".equals(item.risk) || "не найден".equals(item.status)) ? "mid" : "ok";
     }
 
-    private static String statusPlain(String str) {
+    static String statusPlain(String str) {
         if ("CosIng".equals(str)) {
             return "в реестре ЕС";
         }
         if ("добавка".equals(str)) {
             return "пищевая добавка";
+        }
+        if ("еда".equals(str)) {
+            return "пищевой продукт";
         }
         if ("ограничен".equals(str) || "с ограничением".equals(str)) {
             return "с ограничением";
