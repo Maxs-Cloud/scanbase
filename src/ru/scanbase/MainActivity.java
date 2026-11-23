@@ -1289,6 +1289,17 @@ public class MainActivity extends Activity {
         {"reducing", "восстановитель"}, {"depilatory", "депилятор"}, {"oral-care", "полость рта"},
         {"nourishing", "питание"}, {"soothing", "успокоение"}, {"tonic", "тоник"},
         {"hydrotrope", "гидротроп"}, {"binding", "связующее"}, {"bulking", "наполнитель"},
+        {"plasticiser", "пластификатор"}, {"plasticizer", "пластификатор"},
+        {"absorbent", "абсорбент"}, {"nail-conditioning", "уход за ногтями"},
+        {"flavouring", "ароматизатор"}, {"flavoring", "ароматизатор"},
+        {"anticaking", "антислеживатель"}, {"stabilising", "стабилизатор"}, {"stabilizing", "стабилизатор"},
+        {"antiplaque", "против налёта"}, {"hair-waving-or-straightening", "завивка/выпрямление"},
+        {"hair-waving", "завивка"}, {"hair-straightening", "выпрямление"},
+        {"moisturising", "увлажнение"}, {"antifoaming", "пеногаситель"}, {"antifoam", "пеногаситель"},
+        {"antiperspirant", "антиперспирант"}, {"smoothing", "разглаживание"}, {"refreshing", "освежение"},
+        {"anticorrosive", "антикоррозийное"}, {"gel-forming", "гелеобразователь"}, {"gel forming", "гелеобразователь"},
+        {"refatting", "жирообновление"}, {"keratolytic", "кератолитик"}, {"detangling", "распутывание волос"},
+        {"pearlescent", "перламутр"}, {"opacifying", "мутнитель"}, {"tanning", "автозагар"},
     };
 
     static String roleFromFunc(String func) {

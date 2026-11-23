@@ -33,6 +33,21 @@ public class FuncRoleTest {
         check("unknown-magic-function", null);
         check("", null);
         check(null, null);
+        // частые функции, добавленные по покрытию БД
+        check("plasticiser", "пластификатор");
+        check("absorbent", "абсорбент");
+        check("nail-conditioning", "уход за ногтями");
+        check("flavouring", "ароматизатор");
+        check("anticaking", "антислеживатель");
+        check("stabilising", "стабилизатор");
+        check("moisturising", "увлажнение");
+        check("antiperspirant", "антиперспирант");
+        check("gel-forming", "гелеобразователь");
+        check("keratolytic", "кератолитик");
+        check("detangling", "распутывание волос");
+        check("pearlescent", "перламутр");
+        // приоритет: film-forming идёт раньше plasticiser
+        check("plasticiser , film-forming", "плёнкообразователь");
         System.out.println(fails == 0 ? "FuncRoleTest: всё зелёное (" + total + ")"
                 : "FuncRoleTest: ПРОВАЛОВ " + fails + " из " + total);
         if (fails > 0) System.exit(1);
