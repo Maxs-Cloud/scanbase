@@ -135,6 +135,48 @@ public final class Rules {
         return sb.toString();
     }
 
+    /* Состав подают по-разному: «соль, сахар, мука» и «соль сахар мука». По
+       запятой/точке с запятой/переносу режем всегда, а одиночный пробел — нет,
+       иначе «sodium chloride» рассыпалось бы на два несуществующих компонента.
+       Здесь добираем второй случай: если кусок сам по себе НЕ известен базе, но
+       КАЖДОЕ его слово по отдельности — известный компонент, то это перечисление
+       через пробел, и его надо разбить. «sodium chloride» остаётся целым, потому
+       что целиком это тоже известное имя, а «Свёкла сахар мука» дробится, так как
+       целого такого компонента нет, а каждое слово есть. known — проверка «есть ли
+       имя в базе/синонимах», её даёт вызывающий код. */
+    public static List<String> expandBySpace(List<String> names, java.util.function.Predicate<String> known) {
+        ArrayList<String> out = new ArrayList<>();
+        for (String name : names) {
+            String nz = nz(name);
+            if (nz.indexOf(32) < 0 || known.test(nz)) {
+                out.add(name);
+                continue;
+            }
+            String[] words = nz.split("\\s+");
+            int significant = 0;
+            boolean allKnown = words.length >= 2;
+            for (String word : words) {
+                boolean sig = word.length() > 2 || word.matches("(?iu)^e\\d{3,4}$") || word.matches("(?iu)^ci\\s*\\d{3,5}$");
+                if (sig) {
+                    significant++;
+                    if (!known.test(word)) {
+                        allKnown = false;
+                    }
+                }
+            }
+            if (allKnown && significant >= 2) {
+                for (String word : words) {
+                    if (word.length() > 2 || word.matches("(?iu)^e\\d{3,4}$") || word.matches("(?iu)^ci\\s*\\d{3,5}$")) {
+                        out.add(word);
+                    }
+                }
+            } else {
+                out.add(name);
+            }
+        }
+        return out;
+    }
+
     public static String[] verdictVariants(int i, int i2, int i3, String str, int i4, String str2) {
         String str3;
         String str4 = "";

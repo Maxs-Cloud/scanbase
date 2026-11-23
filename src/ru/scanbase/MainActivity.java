@@ -1814,6 +1814,15 @@ public class MainActivity extends Activity {
             arrayList.add(cursorRawQuery2.getString(0));
         }
         cursorRawQuery2.close();
+        /* Еда тоже должна попадать в индекс названий: иначе список компонентов,
+           поданный через пробел («соль сахар мука»), не дробится — expandBySpace
+           видит слова, которых нет в nameIdx, и оставляет кусок склеенным. lookup
+           еду находит, а findDbName — нет; заводим еду в тот же индекс. */
+        Cursor cursorFoodNames = this.db.rawQuery("SELECT DISTINCT name FROM food_ingredients", null);
+        while (cursorFoodNames.moveToNext()) {
+            arrayList.add(cursorFoodNames.getString(0));
+        }
+        cursorFoodNames.close();
         this.nameIdx = arrayList;
         Log.i("ScanBase", "индекс названий: " + arrayList.size());
     }
@@ -2752,7 +2761,13 @@ public class MainActivity extends Activity {
         }
         strExtractUrl = marketCard(strExtractUrl);
         String lowerCase = strTrim.toLowerCase(Locale.ROOT);
-        if (!strExtractUrl.isEmpty() || strTrim.length() <= 20 || (!strTrim.contains(",") && !strTrim.contains(";") && !strTrim.contains("%") && !strTrim.matches("(?iu).*\\d+\\s*%.*") && !lowerCase.contains("состав") && !lowerCase.contains("ingredients"))) {
+        /* Состав, поданный через пробел («соль сахар мука»), не содержит ни
+           запятых, ни процентов, ни слова «состав», и при длине больше 20 знаков
+           старый шлюз отправлял его в ветку «это не ссылка», не доводя до
+           expandBySpace. Если из текста набирается не менее двух известных
+           компонентов — это список, ведём его в разбор. */
+        boolean isComp = isIngredientList(strTrim);
+        if (!strExtractUrl.isEmpty() || (!isComp && (strTrim.length() <= 20 || (!strTrim.contains(",") && !strTrim.contains(";") && !strTrim.contains("%") && !strTrim.matches("(?iu).*\\d+\\s*%.*") && !lowerCase.contains("состав") && !lowerCase.contains("ingredients"))))) {
             if (strExtractUrl.isEmpty()) {
                 showError("Это не ссылка. Нужна ссылка Ozon, Wildberries или Яндекс Маркет, либо текст состава.");
                 return;
@@ -3131,7 +3146,7 @@ public class MainActivity extends Activity {
         showPage(false);
         this.lastKey = productKey(jSONObject.optString("title", ""), strOptString, jSONObject.optString("priceText", ""));
         this.lastComposition = strOptString;
-        List<String> listSplitNames = splitNames(strOptString);
+        List<String> listSplitNames = expandBySpace(splitNames(strOptString));
         if (listSplitNames.isEmpty()) {
             clearReport();
             showText("Состав найден, но не удалось разбить его на названия.\nРазбей его запятыми или открой вкладку «Отзыв ИИ» — там текст читает модель.");
@@ -3355,6 +3370,24 @@ public class MainActivity extends Activity {
 
     private static List<String> splitNames(String str) {
         return Rules.splitNames(str);
+    }
+
+    /* Состав бывает и «соль, сахар, мука», и «соль сахар мука». Разбиваем кусок
+       по пробелу только когда он сам не известен базе, а каждое слово — известно. */
+    private List<String> expandBySpace(List<String> names) {
+        return Rules.expandBySpace(names, this::isKnownName);
+    }
+
+    private boolean isKnownName(String str) {
+        return findDbName(str) != null || aliasFor(str) != null;
+    }
+
+    /* Состав через пробел: splitNames отдаёт его одним куском, а expandBySpace
+       дробит на известные компоненты. Если после дробления названий стало больше —
+       перед нами список ингредиентов, а не название товара и не мусор. */
+    private boolean isIngredientList(String str) {
+        List<String> base = splitNames(str);
+        return expandBySpace(base).size() > base.size();
     }
 
     private void startAiReview() {
