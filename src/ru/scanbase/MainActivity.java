@@ -56,6 +56,7 @@ public class MainActivity extends Activity {
     private List<Item> lastItems;
     private JSONObject lastJson;
     private List nameIdx;
+    private java.util.HashSet<String> nameIdxSet;
     private Button pageButton;
     private WebView resultWeb;
     private Button tabAi;
@@ -1824,6 +1825,8 @@ public class MainActivity extends Activity {
         }
         cursorFoodNames.close();
         this.nameIdx = arrayList;
+        this.nameIdxSet = new java.util.HashSet<>(arrayList.size() * 2);
+        for (Object o : arrayList) this.nameIdxSet.add(Rules.norm((String) o));
         Log.i("ScanBase", "индекс названий: " + arrayList.size());
     }
 
@@ -2764,13 +2767,10 @@ public class MainActivity extends Activity {
         }
         strExtractUrl = marketCard(strExtractUrl);
         String lowerCase = strTrim.toLowerCase(Locale.ROOT);
-        /* Состав, поданный через пробел («соль сахар мука»), не содержит ни
-           запятых, ни процентов, ни слова «состав», и при длине больше 20 знаков
-           старый шлюз отправлял его в ветку «это не ссылка», не доводя до
-           expandBySpace. Если из текста набирается не менее двух известных
-           компонентов — это список, ведём его в разбор. */
-        boolean isComp = isIngredientList(strTrim);
-        if (!strExtractUrl.isEmpty() || (!isComp && (strTrim.length() <= 20 || (!strTrim.contains(",") && !strTrim.contains(";") && !strTrim.contains("%") && !strTrim.matches("(?iu).*\\d+\\s*%.*") && !lowerCase.contains("состав") && !lowerCase.contains("ingredients"))))) {
+        boolean hasMarkers = strTrim.contains(",") || strTrim.contains(";") || strTrim.contains("%")
+                || strTrim.matches("(?iu).*\\d+\\s*%.*") || lowerCase.contains("состав") || lowerCase.contains("ingredients");
+        boolean isComp = hasMarkers || (strTrim.length() > 20 && isIngredientList(strTrim));
+        if (!strExtractUrl.isEmpty() || (!isComp && strTrim.length() <= 20)) {
             if (strExtractUrl.isEmpty()) {
                 showError("Это не ссылка. Нужна ссылка Ozon, Wildberries или Яндекс Маркет, либо текст состава.");
                 return;
@@ -3399,7 +3399,15 @@ public class MainActivity extends Activity {
     }
 
     private boolean isKnownName(String str) {
-        return findDbName(str) != null || aliasFor(str) != null;
+        if (this.nameIdxSet != null) {
+            String n = Rules.norm(str);
+            if (this.nameIdxSet.contains(n)) return true;
+            String t = Rules.norm(Rules.translit(str));
+            if (!t.equals(n) && this.nameIdxSet.contains(t)) return true;
+        } else {
+            if (findDbName(str) != null) return true;
+        }
+        return Rules.ALIAS.containsKey(Rules.norm(str));
     }
 
     /* Состав через пробел: splitNames отдаёт его одним куском, а expandBySpace
