@@ -1463,9 +1463,22 @@ public class MainActivity extends Activity {
         return i;
     }
 
+    /* Сколько категорий бытовой химии узналось в составе. Считаем не слова, а
+       категории: гипохлорит и гидроксид натрия — два разных признака, а два
+       синонима одной строки («едкий натр» и «каустическая сода») — один. */
+    static int countHouseholdWords(String str) {
+        int i = 0;
+        for (String[] household : HOUSEHOLD) {
+            if (containsAny(str, household[0].split("\\|"))) {
+                i++;
+            }
+        }
+        return i;
+    }
+
     /* {ключ, «1» если детское, почему так решили, уверенность, вес} */
     static String[] categoryOf(String strComp, String strTitle, String strDesc, String strPlat,
-                               int iMaterials, int iCatalog, int iFood) {
+                               int iMaterials, int iCatalog, int iFood, int iHousehold) {
         String lowerCase = nz(strPlat).toLowerCase(Locale.ROOT);
         String lowerCase2 = (nz(strTitle) + " " + nz(strDesc)).toLowerCase(Locale.ROOT);
         String lowerCase3 = nz(strComp).toLowerCase(Locale.ROOT);
@@ -1491,6 +1504,7 @@ public class MainActivity extends Activity {
         int iCos = catIndex("cosmetics");
         int iFoodIdx = catIndex("food");
         int iClo = catIndex("clothes");
+        int iHouse = catIndex("household");
         if (iCatalog >= 3) {
             iArr[iCos] = iArr[iCos] + 3;
             strArrWhy[iCos] = "состав совпал с базой косметики";
@@ -1515,7 +1529,16 @@ public class MainActivity extends Activity {
             iArr[iClo] = iArr[iClo] + 2;
             strArrWhy[iClo] = "в составе есть волокно";
         }
-        if (containsAny(lowerCase3, COSMETIC_MARKS)) {
+        if (iHousehold >= 3) {
+            iArr[iHouse] = iArr[iHouse] + 3;
+            strArrWhy[iHouse] = "в составе несколько признаков бытовой химии";
+        } else if (iHousehold >= 1) {
+            iArr[iHouse] = iArr[iHouse] + 2;
+            strArrWhy[iHouse] = "в составе есть признак бытовой химии";
+        }
+        /* Вода и глицерин есть и в средстве для посуды: пока в составе
+           угадалась бытовая химия, эти маркеры косметикой не считаем. */
+        if (iHousehold < 1 && containsAny(lowerCase3, COSMETIC_MARKS)) {
             iArr[iCos] = iArr[iCos] + 1;
             if (strArrWhy[iCos] == null) {
                 strArrWhy[iCos] = "в составе вода, глицерин или отдушка";
@@ -1626,7 +1649,8 @@ public class MainActivity extends Activity {
         }
         String strLower = nz(this.lastComposition).toLowerCase(Locale.ROOT);
         String[] strArrCompute = categoryOf(this.lastComposition, this.lastTitle, this.lastDescription,
-                this.lastCatHint, countMaterialWords(strLower), countByKind(true), countByKind(false));
+                this.lastCatHint, countMaterialWords(strLower), countByKind(true), countByKind(false),
+                countHouseholdWords(strLower));
         this.lastCat = strArrCompute;
         return strArrCompute;
     }
