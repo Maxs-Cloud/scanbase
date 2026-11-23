@@ -21,6 +21,21 @@ public final class Rules {
         for (String[] strArr2 : strArr) {
             ALIAS.put(norm(strArr2[0]), strArr2[1]);
         }
+        /* Частые синонимы, которых нет в каталоге как отдельных имён: английские
+           разговорные (glycerine, perfume) и французские формы с этикеток ЕС
+           (acide citrique, gomme xanthane, beurre de karité). Значение — канон,
+           который lookup() находит в каталоге. */
+        String[][] strArrSyn = {
+            new String[]{"glycerine", "glycerin"}, new String[]{"perfume", "parfum"},
+            new String[]{"eau", "water"}, new String[]{"acide citrique", "citric acid"},
+            new String[]{"gomme xanthane", "xanthan gum"}, new String[]{"beurre de karité", "butyrospermum parkii butter"},
+            new String[]{"shea butter", "butyrospermum parkii butter"}, new String[]{"huile minérale", "paraffinum liquidum"},
+            new String[]{"vitamine e", "tocopherol"}, new String[]{"vitamine c", "ascorbic acid"},
+            new String[]{"allantoïne", "allantoin"}, new String[]{"alcool éthylique", "alcohol"},
+            new String[]{"beurre de karite", "butyrospermum parkii butter"}, new String[]{"huile minerale", "paraffinum liquidum"}};
+        for (String[] strArr3 : strArrSyn) {
+            ALIAS.put(norm(strArr3[0]), strArr3[1]);
+        }
         TR_FROM = new char[]{1072, 1073, 1074, 1075, 1076, 1077, 1105, 1078, 1079, 1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 1091, 1092, 1093, 1094, 1095, 1096, 1097, 1098, 1099, 1100, 1101, 1102, 1103};
         TR_TO = new String[]{"a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "i", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f", "h", "ts", "ch", "sh", "sch", "", "y", "", "e", "yu", "ya"};
     }

@@ -1893,37 +1893,64 @@ public class MainActivity extends Activity {
             return null;
         }
         String strNorm = norm(str);
-        if (strNorm.length() < 5) {
+        if (strNorm.isEmpty()) {
             return null;
         }
         String strNorm2 = norm(translit(strNorm));
-        int i = 0;
-        String str2 = null;
+        /* Точное совпадение ищем ПЕРВЫМ проходом и на ЛЮБОЙ длине: короткое имя
+           (aqua, bht) и имя, которое ещё и префикс десятков других (dimethicone),
+           раньше терялись — цикл натыкался на два префикса и выходил с null, так и
+           не дойдя до точного совпадения. */
         for (String str3 : list) {
             String strNorm3 = norm(str3);
             if (strNorm3.equals(strNorm)) {
                 return str3;
             }
-            if (strNorm3.length() + 1 >= strNorm.length() && strNorm3.startsWith(strNorm)) {
-                i++;
-                str2 = str3;
-            }
-            if (!strNorm2.equals(strNorm)) {
-                String strNorm4 = norm(translit(strNorm3));
-                if (strNorm4.equals(strNorm2)) {
-                    return str3;
-                }
-                if (strNorm4.length() + 1 >= strNorm2.length() && strNorm4.startsWith(strNorm2)) {
-                    i++;
-                    str2 = str3;
-                }
-            }
-            if (i > 1) {
-                return null;
+            if (!strNorm2.equals(strNorm) && norm(translit(strNorm3)).equals(strNorm2)) {
+                return str3;
             }
         }
-        if (i == 1) {
-            return str2;
+        /* Префикс — только для длинных запросов и только если кандидат один. */
+        if (strNorm.length() >= 5) {
+            int i = 0;
+            String str2 = null;
+            for (String str3 : list) {
+                String strNorm3 = norm(str3);
+                if (strNorm3.length() + 1 >= strNorm.length() && strNorm3.startsWith(strNorm)) {
+                    i++;
+                    str2 = str3;
+                    if (i > 1) {
+                        return null;
+                    }
+                }
+                if (!strNorm2.equals(strNorm)) {
+                    String strNorm4 = norm(translit(strNorm3));
+                    if (strNorm4.length() + 1 >= strNorm2.length() && strNorm4.startsWith(strNorm2)) {
+                        i++;
+                        str2 = str3;
+                        if (i > 1) {
+                            return null;
+                        }
+                    }
+                }
+            }
+            if (i == 1) {
+                return str2;
+            }
+        }
+        /* Двуязычная этикетка ЕС: «Aqua/Water/Eau», «Parfum/Fragrance». Целое не
+           нашлось — пробуем части по слэшу. «Caprylic/Capric Triglyceride» при этом
+           не режется: целое находится выше и сюда не доходит. */
+        if (str.indexOf('/') >= 0) {
+            for (String part : str.split("/")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty() && !trimmed.equals(str)) {
+                    String found = findDbName(trimmed);
+                    if (found != null) {
+                        return found;
+                    }
+                }
+            }
         }
         return null;
     }
