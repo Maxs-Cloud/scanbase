@@ -216,6 +216,7 @@ public class MainActivity extends Activity {
     static class Item {
         boolean catalog;
         String food;
+        String func;
         List<String[]> law = new ArrayList();
         String name = "";
         String note = "";
@@ -288,6 +289,7 @@ public class MainActivity extends Activity {
     private static class Row {
         boolean catalog;
         String food;
+        String func;
         List<String[]> law;
 
         private Row() {
@@ -503,6 +505,7 @@ public class MainActivity extends Activity {
             item.law = rowLookup2.law;
             item.catalog = rowLookup2.catalog;
             item.food = rowLookup2.food;
+            item.func = rowLookup2.func;
             if (!rowLookup2.law.isEmpty()) {
                 item.status = "ограничен";
             } else if (rowLookup2.catalog) {
@@ -1169,6 +1172,15 @@ public class MainActivity extends Activity {
             item.role = "ингредиент";
             item.risk = item.law.isEmpty() ? "низкий" : "высокий";
         }
+        /* Роль из авторитетной INCI-функции (Open Beauty Facts), но только там,
+           где наш словарь не дал ничего конкретнее общего «ингредиент». Риск при
+           этом не трогаем — он идёт из права и словарей риска. */
+        if ("ингредиент".equals(item.role) && item.func != null && !item.func.isEmpty()) {
+            String strFuncRole = roleFromFunc(item.func);
+            if (strFuncRole != null) {
+                item.role = strFuncRole;
+            }
+        }
         String[] strArr = HIGH_RISK;
         if (containsAny(lowerCase, strArr)) {
             item.risk = "высокий";
@@ -1198,6 +1210,56 @@ public class MainActivity extends Activity {
         for (String[] e : law) {
             String a = nz(e[1]);
             if (a.contains("запрещ") || a.equals("Ann II") || a.equals("Прил 1")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /* INCI-функция (Open Beauty Facts) → роль по-русски. Порядок важнее алфавита:
+       берём самую содержательную функцию, а не первую в списке. Совпадение — по
+       точному токену, чтобы «foam-boosting» не спутать с «foaming». */
+    private static final String[][] FUNC_ROLE = {
+        {"preservative", "консервант"}, {"antimicrobial", "консервант"},
+        {"hair-dyeing", "краситель"}, {"cosmetic-colorant", "краситель"}, {"colourant", "краситель"},
+        {"sunscreen", "УФ-фильтр"}, {"uv-absorber", "УФ-фильтр"}, {"uv-filter", "УФ-фильтр"},
+        {"fragrance", "отдушка"}, {"perfuming", "отдушка"},
+        {"surfactant", "ПАВ"}, {"cleansing", "ПАВ"}, {"foam-boosting", "ПАВ"}, {"foaming", "ПАВ"},
+        {"emulsifying", "эмульгатор"}, {"emulsifier", "эмульгатор"}, {"emulsion-stabilising", "эмульгатор"},
+        {"viscosity-controlling", "загуститель"}, {"thickening", "загуститель"},
+        {"humectant", "увлажнение"}, {"emollient", "смягчение"}, {"skin-protecting", "защита кожи"},
+        {"skin-conditioning", "уход за кожей"}, {"hair-conditioning", "уход за волосами"},
+        {"film-forming", "плёнкообразователь"}, {"antioxidant", "антиоксидант"},
+        {"buffering", "регулятор pH"}, {"solvent", "растворитель"}, {"denaturant", "денатурат"},
+        {"abrasive", "абразив"}, {"bleaching", "отбеливатель"}, {"astringent", "вяжущее"},
+        {"antistatic", "антистатик"}, {"deodorant", "дезодорант"}, {"hair-fixing", "стилинг"},
+        {"opacifying", "мутнитель"}, {"propellant", "пропеллент"},
+        {"chelating", "хелатор"}, {"sequestering", "хелатор"}, {"masking", "маскирующий"},
+        {"antidandruff", "против перхоти"}, {"antiseborrhoeic", "против себореи"},
+        {"antiseborrheic", "против себореи"}, {"hair-bleaching", "осветление волос"},
+        {"hair-perming", "завивка"}, {"oxidising", "окислитель"}, {"oxidizing", "окислитель"},
+        {"reducing", "восстановитель"}, {"depilatory", "депилятор"}, {"oral-care", "полость рта"},
+        {"nourishing", "питание"}, {"soothing", "успокоение"}, {"tonic", "тоник"},
+        {"hydrotrope", "гидротроп"}, {"binding", "связующее"}, {"bulking", "наполнитель"},
+    };
+
+    static String roleFromFunc(String func) {
+        if (func == null || func.isEmpty()) {
+            return null;
+        }
+        String lower = func.toLowerCase(Locale.ROOT);
+        for (String[] pair : FUNC_ROLE) {
+            if (tokenHas(lower, pair[0])) {
+                return pair[1];
+            }
+        }
+        return null;
+    }
+
+    /* Токен-вхождение: функция лежит в строке «a , b , c» целым токеном. */
+    private static boolean tokenHas(String lowerCsv, String token) {
+        for (String part : lowerCsv.split(",")) {
+            if (part.trim().equals(token)) {
                 return true;
             }
         }
@@ -2191,10 +2253,13 @@ public class MainActivity extends Activity {
             }
         }
         cursorEaeu.close();
-        Cursor cursorRawQuery2 = this.db.rawQuery("SELECT cas FROM cosmetic_ingredients WHERE lower(name)=?", new String[]{str.toLowerCase(Locale.ROOT)});
+        Cursor cursorRawQuery2 = this.db.rawQuery("SELECT cas, func FROM cosmetic_ingredients WHERE lower(name)=?", new String[]{str.toLowerCase(Locale.ROOT)});
         while (cursorRawQuery2.moveToNext()) {
             row.catalog = true;
             collectCas(casSet, cursorRawQuery2.getString(0));
+            if (row.func == null) {
+                row.func = cursorRawQuery2.getString(1);
+            }
         }
         cursorRawQuery2.close();
         Cursor cursorRawQuery3 = this.db.rawQuery("SELECT e FROM food_additives WHERE lower(name)=? OR lower(trts_name)=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT), str.toLowerCase(Locale.ROOT)});
