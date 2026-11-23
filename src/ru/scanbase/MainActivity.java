@@ -2950,7 +2950,10 @@ public class MainActivity extends Activity {
     private File prepareDb() throws Exception {
         File file = new File(getFilesDir(), "ingredients.db");
         if (file.exists() && file.length() > 1000000) {
-            return file;
+            if (dbSchemaOk(file)) {
+                return file;
+            }
+            file.delete();
         }
         InputStream inputStreamOpen = getAssets().open("ingredients.db");
         FileOutputStream fileOutputStream = new FileOutputStream(file);
@@ -2963,6 +2966,20 @@ public class MainActivity extends Activity {
                 return file;
             }
             fileOutputStream.write(bArr, 0, i);
+        }
+    }
+
+    private static boolean dbSchemaOk(File f) {
+        SQLiteDatabase db = null;
+        try {
+            db = SQLiteDatabase.openDatabase(f.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
+            db.rawQuery("SELECT func FROM cosmetic_ingredients LIMIT 1", null).close();
+            db.rawQuery("SELECT name FROM food_ingredients LIMIT 1", null).close();
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (db != null) db.close();
         }
     }
 
