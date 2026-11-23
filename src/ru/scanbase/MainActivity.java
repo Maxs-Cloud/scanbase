@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ContentValues;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
@@ -3441,18 +3443,39 @@ public class MainActivity extends Activity {
     }
 
     private void launchCamera() {
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 99);
+            return;
+        }
+        doLaunchCamera();
+    }
+
+    private void doLaunchCamera() {
         try {
-            File photo = new File(getExternalFilesDir(null), "scan.jpg");
-            cameraPhotoUri = Uri.fromFile(photo);
+            ContentValues cv = new ContentValues();
+            cv.put(MediaStore.Images.Media.DISPLAY_NAME, "scan_" + System.currentTimeMillis() + ".jpg");
+            cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            cameraPhotoUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+            if (cameraPhotoUri == null) {
+                showError("Не удалось создать файл для фото.");
+                return;
+            }
             Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
             intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri);
-            if (intent.resolveActivity(getPackageManager()) != null) {
-                startActivityForResult(intent, REQ_CAMERA);
-            } else {
-                showError("Камера недоступна.");
-            }
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(intent, REQ_CAMERA);
         } catch (Exception e) {
-            showError("Не удалось открыть камеру: " + e.getMessage());
+            showError("Камера недоступна: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == 99 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            doLaunchCamera();
+        } else {
+            showError("Разрешение на камеру не выдано.");
         }
     }
 
@@ -3804,42 +3827,43 @@ public class MainActivity extends Activity {
         this.error.setVisibility(8);
         this.error.setText("Можно проверять только Ozon, Wildberries и Яндекс Маркет.");
         linearLayout.addView(this.error, match());
-        LinearLayout linearLayout2 = new LinearLayout(this);
-        linearLayout2.setOrientation(0);
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(0);
         Button button = new Button(this);
         button.setText("Проверить");
         button.setAllCaps(false);
-        button.setTextSize(12.0f);
+        button.setTextSize(11.0f);
         button.setOnClickListener(new MainActivity$$ExternalSyntheticLambda1(this));
-        linearLayout2.addView(button, wrap());
+        row1.addView(button, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         Button button2 = new Button(this);
         button2.setText("Вставить");
         button2.setAllCaps(false);
-        button2.setTextSize(12.0f);
+        button2.setTextSize(11.0f);
         button2.setOnClickListener(new MainActivity$$ExternalSyntheticLambda2(this));
-        linearLayout2.addView(button2, wrap());
+        row1.addView(button2, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         Button button3 = new Button(this);
         button3.setText("Страница");
         this.pageButton = button3;
         button3.setAllCaps(false);
-        button3.setTextSize(12.0f);
+        button3.setTextSize(11.0f);
         button3.setOnClickListener(new MainActivity$$ExternalSyntheticLambda3(this));
-        linearLayout2.addView(button3, wrap());
+        row1.addView(button3, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        linearLayout.addView(row1, match());
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(0);
         Button button4 = new Button(this);
         button4.setText("В приложение");
         button4.setAllCaps(false);
-        button4.setTextSize(12.0f);
+        button4.setTextSize(11.0f);
         button4.setOnClickListener(new MainActivity$$ExternalSyntheticLambda4(this));
-        linearLayout2.addView(button4, wrap());
+        row2.addView(button4, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         Button btnScan = new Button(this);
         btnScan.setText("📷 Сканер");
         btnScan.setAllCaps(false);
-        btnScan.setTextSize(12.0f);
+        btnScan.setTextSize(11.0f);
         btnScan.setOnClickListener(v -> showScanDialog());
-        linearLayout2.addView(btnScan, wrap());
-        HorizontalScrollView horizontalScrollView = new HorizontalScrollView(this);
-        horizontalScrollView.addView(linearLayout2, wrap());
-        linearLayout.addView(horizontalScrollView, match());
+        row2.addView(btnScan, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        linearLayout.addView(row2, match());
         WebView webView = new WebView(this);
         this.resultWeb = webView;
         WebSettings settings = webView.getSettings();
