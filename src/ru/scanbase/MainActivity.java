@@ -1694,12 +1694,12 @@ public class MainActivity extends Activity {
        «артикул» пользуются именно там. Площадку можно назвать словами. Строка с
        несколькими числами или с прочим текстом артикулом не считается: так текст
        состава («хлопок 80%, полиэстер 20%») не превращается в ссылку. */
-    private static String articleUrl(String str) {
+    static String articleUrl(String str) {
         String s = nz(str).trim();
         if (s.isEmpty() || s.length() > 40 || s.contains("://")) {
             return "";
         }
-        Matcher matcher = Pattern.compile("\\d{5,12}").matcher(s);
+        Matcher matcher = Pattern.compile("(?<!\\d)\\d{5,20}(?!\\d)").matcher(s);
         if (!matcher.find()) {
             return "";
         }
@@ -1709,7 +1709,10 @@ public class MainActivity extends Activity {
         }
         String lowerCase = s.replace(strNum, "").toLowerCase(Locale.ROOT).replaceAll("[^a-zа-яё]", "");
         if (lowerCase.isEmpty()) {
-            return "https://www.wildberries.ru/catalog/" + strNum + "/detail.aspx";
+            /* До 12 цифр — артикул Wildberries, длиннее — id Яндекс Маркета:
+               у WB артикулы семизначные, карточки Маркета длиннее 12 цифр. */
+            return strNum.length() > 12 ? "https://market.yandex.ru/card/x/" + strNum
+                    : "https://www.wildberries.ru/catalog/" + strNum + "/detail.aspx";
         }
         if (lowerCase.contains("ozon") || lowerCase.contains("озон")) {
             return "https://www.ozon.ru/product/" + strNum + "/";
@@ -1727,6 +1730,20 @@ public class MainActivity extends Activity {
             return "https://www.wildberries.ru/catalog/" + strNum + "/detail.aspx";
         }
         return "";
+    }
+
+    /* Мёртвые форматы ссылок Маркета: /product--<id> и /product/<id> рисуют «такой
+       страницы». Живой формат — /card/<слаг>/<id>; слаг в пути не проверяется. */
+    static String marketCard(String str) {
+        String s = nz(str);
+        if (!s.contains("market.yandex.")) {
+            return s;
+        }
+        Matcher matcher = Pattern.compile("(?:product--|/product/)(\\d{5,20})(?!\\d)").matcher(s);
+        if (!matcher.find()) {
+            return s;
+        }
+        return "https://market.yandex.ru/card/x/" + matcher.group(1);
     }
 
     private static String few(String str, int i) {
@@ -2434,6 +2451,7 @@ public class MainActivity extends Activity {
                 strExtractUrl = strArticle;
             }
         }
+        strExtractUrl = marketCard(strExtractUrl);
         String lowerCase = strTrim.toLowerCase(Locale.ROOT);
         if (!strExtractUrl.isEmpty() || strTrim.length() <= 20 || (!strTrim.contains(",") && !strTrim.contains(";") && !strTrim.contains("%") && !strTrim.matches("(?iu).*\\d+\\s*%.*") && !lowerCase.contains("состав") && !lowerCase.contains("ingredients"))) {
             if (strExtractUrl.isEmpty()) {
