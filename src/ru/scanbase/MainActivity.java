@@ -1180,13 +1180,28 @@ public class MainActivity extends Activity {
             return;
         }
         double dMaxConc = maxConc(item.law);
-        if (dMaxConc <= 0.0d || item.pct <= dMaxConc + 1.0E-4d) {
+        if (isProhibited(item.law)) {
+            /* Внесён в список запрещённого (Annex II / Прил 1): в косметике его
+               быть не должно — это не «разрешено в малой дозе», а тревога. */
+            item.status = "с ограничением";
+            item.risk = "высокий";
+        } else if (dMaxConc <= 0.0d || item.pct <= dMaxConc + 1.0E-4d) {
             item.status = "с ограничением";
             item.risk = containsAny(lowerCase, strArr) ? "высокий" : "средний";
         } else {
             item.status = "превышение";
             item.risk = "высокий";
         }
+    }
+
+    private static boolean isProhibited(List<String[]> law) {
+        for (String[] e : law) {
+            String a = nz(e[1]);
+            if (a.contains("запрещ") || a.equals("Ann II") || a.equals("Прил 1")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String cleanTitle(String str) {
@@ -2123,6 +2138,24 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static void addLaw(Row row, LinkedHashSet seen, String sys, String annex, String ref, String maxc) {
+        if (seen.add(nz(sys) + nz(annex) + nz(ref))) {
+            row.law.add(new String[]{nz(sys), nz(annex), nz(ref), maxc == null ? "" : maxc});
+        }
+    }
+
+    private static void collectCas(LinkedHashSet set, String cas) {
+        if (cas == null) {
+            return;
+        }
+        for (String part : cas.split("[;/]")) {
+            String t = part.trim();
+            if (t.length() >= 5) {
+                set.add(t);
+            }
+        }
+    }
+
     private Row lookup(String str) {
         if (this.db == null) {
             return null;
@@ -2132,28 +2165,60 @@ public class MainActivity extends Activity {
             return null;
         }
         Row row = new Row();
-        Cursor cursorRawQuery = this.db.rawQuery("SELECT system, annex, ref, max_conc FROM inci_index WHERE norm=?", new String[]{strNorm});
+        Cursor cursorRawQuery = this.db.rawQuery("SELECT system, annex, ref, max_conc, cas FROM inci_index WHERE norm=?", new String[]{strNorm});
         LinkedHashSet linkedHashSet = new LinkedHashSet();
+        LinkedHashSet casSet = new LinkedHashSet();
         while (cursorRawQuery.moveToNext()) {
-            if (linkedHashSet.add(cursorRawQuery.getString(0) + cursorRawQuery.getString(1) + cursorRawQuery.getString(2))) {
-                List<String[]> list = row.law;
-                String[] strArr = new String[4];
-                strArr[0] = cursorRawQuery.getString(0);
-                strArr[1] = cursorRawQuery.getString(1);
-                strArr[2] = cursorRawQuery.getString(2);
-                strArr[3] = cursorRawQuery.getString(3) == null ? "" : cursorRawQuery.getString(3);
-                list.add(strArr);
-            }
+            addLaw(row, linkedHashSet, cursorRawQuery.getString(0), cursorRawQuery.getString(1), cursorRawQuery.getString(2), cursorRawQuery.getString(3));
+            collectCas(casSet, cursorRawQuery.getString(4));
         }
         cursorRawQuery.close();
-        Cursor cursorRawQuery2 = this.db.rawQuery("SELECT 1 FROM cosmetic_ingredients WHERE lower(name)=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT)});
-        row.catalog = cursorRawQuery2.moveToFirst();
+        /* Списки ограничений ЕС и ЕАЭС (запрещено / разрешено с пределом). В
+           inci_index лежат в основном INCI-названия, а запрещённые медикаменты и
+           ограниченные химикаты — в eu_cosmetics_law / trts_cosmetics_law под
+           химическими и INN-именами. Без этих двух запросов они не матчились. */
+        Cursor cursorEu = this.db.rawQuery("SELECT 'EU', annex, ref, max_conc FROM eu_cosmetics_law WHERE lower(name)=? OR lower(inci)=?", new String[]{str.toLowerCase(Locale.ROOT), str.toLowerCase(Locale.ROOT)});
+        while (cursorEu.moveToNext()) {
+            if (linkedHashSet.add(cursorEu.getString(0) + cursorEu.getString(1) + cursorEu.getString(2))) {
+                row.law.add(new String[]{cursorEu.getString(0), cursorEu.getString(1), cursorEu.getString(2), cursorEu.getString(3) == null ? "" : cursorEu.getString(3)});
+            }
+        }
+        cursorEu.close();
+        Cursor cursorEaeu = this.db.rawQuery("SELECT 'EAEU', annex, ref, max_conc FROM trts_cosmetics_law WHERE lower(name_ru)=? OR lower(name_en)=?", new String[]{str.toLowerCase(Locale.ROOT), str.toLowerCase(Locale.ROOT)});
+        while (cursorEaeu.moveToNext()) {
+            if (linkedHashSet.add(cursorEaeu.getString(0) + cursorEaeu.getString(1) + cursorEaeu.getString(2))) {
+                row.law.add(new String[]{cursorEaeu.getString(0), cursorEaeu.getString(1), cursorEaeu.getString(2), cursorEaeu.getString(3) == null ? "" : cursorEaeu.getString(3)});
+            }
+        }
+        cursorEaeu.close();
+        Cursor cursorRawQuery2 = this.db.rawQuery("SELECT cas FROM cosmetic_ingredients WHERE lower(name)=?", new String[]{str.toLowerCase(Locale.ROOT)});
+        while (cursorRawQuery2.moveToNext()) {
+            row.catalog = true;
+            collectCas(casSet, cursorRawQuery2.getString(0));
+        }
         cursorRawQuery2.close();
         Cursor cursorRawQuery3 = this.db.rawQuery("SELECT e FROM food_additives WHERE lower(name)=? OR lower(trts_name)=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT), str.toLowerCase(Locale.ROOT)});
         if (cursorRawQuery3.moveToFirst()) {
             row.food = cursorRawQuery3.getString(0);
         }
         cursorRawQuery3.close();
+        /* Присоединение списков ЕС/ЕАЭС по CAS: точно, без ложных срабатываний на
+           «грязных» юридических именах («Lidocaine (INN)», «…and its salts»). Даёт
+           и «запрещено», которого нет в inci_index: напр. гидрохинон там только
+           «Ann III 0.02 %», а по CAS 123-31-9 в праве ЕС он ещё и Annex II. */
+        for (Object casObj : casSet) {
+            String cas = (String) casObj;
+            Cursor cEu = this.db.rawQuery("SELECT 'EU', annex, ref, max_conc FROM eu_cosmetics_law WHERE cas=?", new String[]{cas});
+            while (cEu.moveToNext()) {
+                addLaw(row, linkedHashSet, cEu.getString(0), cEu.getString(1), cEu.getString(2), cEu.getString(3));
+            }
+            cEu.close();
+            Cursor cEa = this.db.rawQuery("SELECT 'EAEU', annex, ref, max_conc FROM trts_cosmetics_law WHERE cas=?", new String[]{cas});
+            while (cEa.moveToNext()) {
+                addLaw(row, linkedHashSet, cEa.getString(0), cEa.getString(1), cEa.getString(2), cEa.getString(3));
+            }
+            cEa.close();
+        }
         if (row.law.isEmpty() && !row.catalog && row.food == null) {
             return null;
         }
