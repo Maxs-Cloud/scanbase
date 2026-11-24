@@ -3578,19 +3578,15 @@ public class MainActivity extends Activity {
     }
 
     private String decodeBarcode(Uri uri) {
+        Bitmap bmp = null;
         try {
-            Bitmap bmp;
-            if ("file".equals(uri.getScheme())) {
-                bmp = BitmapFactory.decodeFile(uri.getPath());
-            } else {
-                InputStream is = getContentResolver().openInputStream(uri);
-                bmp = BitmapFactory.decodeStream(is);
-                if (is != null) is.close();
-            }
+            bmp = decodeDownscaled(uri, 1600);
             if (bmp == null) return null;
             int w = bmp.getWidth(), h = bmp.getHeight();
             int[] pixels = new int[w * h];
             bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+            bmp.recycle();
+            bmp = null;
             com.google.zxing.LuminanceSource src = new com.google.zxing.RGBLuminanceSource(w, h, pixels);
             com.google.zxing.BinaryBitmap bb = new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(src));
             java.util.EnumMap<com.google.zxing.DecodeHintType, Object> hints = new java.util.EnumMap<>(com.google.zxing.DecodeHintType.class);
@@ -3605,9 +3601,50 @@ public class MainActivity extends Activity {
             return result.getText();
         } catch (com.google.zxing.NotFoundException e) {
             return null;
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // сюда попадает и OutOfMemoryError — раньше он валил приложение
             Log.i("ScanBase", "decode error: " + e);
             return null;
+        } finally {
+            if (bmp != null) bmp.recycle();
+        }
+    }
+
+    /* Декодирует картинку по URI сразу уменьшенной, чтобы длинная сторона не
+       превышала maxSide. Сначала читает только границы (inJustDecodeBounds),
+       подбирает inSampleSize по степени двойки, затем грузит даунскейл. Для
+       фото с камеры это на порядок меньше памяти, чем декод в полном разрешении,
+       и штрихкоду разрешения 1600 px хватает. Возвращает null, если прочитать
+       не удалось. */
+    private Bitmap decodeDownscaled(Uri uri, int maxSide) throws java.io.IOException {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        openStreamDecode(uri, bounds);
+        int w = bounds.outWidth, h = bounds.outHeight;
+        if (w <= 0 || h <= 0) return null;
+        int sample = 1;
+        while (w / (sample * 2) >= maxSide || h / (sample * 2) >= maxSide) {
+            sample *= 2;
+        }
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inSampleSize = sample;
+        return openStreamDecode(uri, opts);
+    }
+
+    /* Открывает поток по URI (file:// или content://) и декодирует его с
+       заданными опциями. Поток закрывается в finally. */
+    private Bitmap openStreamDecode(Uri uri, BitmapFactory.Options opts) throws java.io.IOException {
+        InputStream is = null;
+        try {
+            if ("file".equals(uri.getScheme())) {
+                return BitmapFactory.decodeFile(uri.getPath(), opts);
+            }
+            is = getContentResolver().openInputStream(uri);
+            return BitmapFactory.decodeStream(is, null, opts);
+        } finally {
+            if (is != null) {
+                try { is.close(); } catch (Exception ignored) { }
+            }
         }
     }
 
