@@ -230,6 +230,7 @@ public class MainActivity extends Activity {
         boolean catalog;
         String food;
         String foodName;
+        String pharma;
         String func;
         String hazard;
         List<String[]> law = new ArrayList();
@@ -305,6 +306,7 @@ public class MainActivity extends Activity {
         boolean catalog;
         String food;
         String foodName;
+        String pharma;
         String func;
         String hazard;
         List<String[]> law;
@@ -438,6 +440,39 @@ public class MainActivity extends Activity {
         if ("electronics".equals(str)) {
             return "техника";
         }
+        if ("furniture".equals(str)) {
+            return "мебель";
+        }
+        if ("tableware".equals(str)) {
+            return "посуда или кухонная утварь";
+        }
+        if ("stationery".equals(str)) {
+            return "канцелярский товар";
+        }
+        if ("tools".equals(str)) {
+            return "инструмент";
+        }
+        if ("auto".equals(str)) {
+            return "автотовар";
+        }
+        if ("books".equals(str)) {
+            return "книга";
+        }
+        if ("pet".equals(str)) {
+            return "товар для животных";
+        }
+        if ("sports".equals(str)) {
+            return "спорттовар или туристический товар";
+        }
+        if ("garden".equals(str)) {
+            return "товар для сада и дачи";
+        }
+        if ("toys".equals(str)) {
+            return "игрушка";
+        }
+        if ("building".equals(str)) {
+            return "стройматериал";
+        }
         return "товар без явной категории";
     }
 
@@ -523,6 +558,7 @@ public class MainActivity extends Activity {
             item.catalog = rowLookup2.catalog;
             item.food = rowLookup2.food;
             item.foodName = rowLookup2.foodName;
+            item.pharma = rowLookup2.pharma;
             item.func = rowLookup2.func;
             item.hazard = rowLookup2.hazard;
             if (!rowLookup2.law.isEmpty()) {
@@ -533,6 +569,8 @@ public class MainActivity extends Activity {
                 item.status = "добавка";
             } else if (rowLookup2.foodName != null) {
                 item.status = "еда";
+            } else if (rowLookup2.pharma != null) {
+                item.status = "вещество";
             } else {
                 item.status = "найден";
             }
@@ -540,6 +578,9 @@ public class MainActivity extends Activity {
         classify(item);
         if ("еда".equals(item.status) && "—".equals(item.role)) {
             item.role = "пищевой продукт";
+        }
+        if ("вещество".equals(item.status)) {
+            item.role = "действующее вещество";
         }
         if ("не найден".equals(item.status) && !"не распознан".equals(item.role)) {
             item.status = "по категории";
@@ -676,7 +717,7 @@ public class MainActivity extends Activity {
                 if (z2 && arrayList5.size() < 6) {
                     arrayList5.add(stripPercent(next.name));
                 }
-                if ((!"высокий".equals(next.risk) || str7.equals(next.risk)) && arrayList4.size() < 6) {
+                if (isRiskyItem(next) && arrayList4.size() < 6) {
                     arrayList = arrayList4;
                     arrayList.add(stripPercent(next.name));
                 } else {
@@ -729,6 +770,7 @@ public class MainActivity extends Activity {
                 i7 = i19;
                 strDetectCategory = str10;
                 it = it2;
+                continue;
             }
             i6 = i18;
             if (z2) {
@@ -1173,7 +1215,7 @@ public class MainActivity extends Activity {
         } else if (containsAny(lowerCase, SOLVENT)) {
             item.role = "растворитель";
             item.risk = "низкий";
-        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && householdOf(lowerCase) != null) {
+        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && item.pharma == null && householdOf(lowerCase) != null) {
             /* Бытовая химия: роль и риск берём из своего словаря, а не из
                косметического — у ПАВ и щёлочи другие нормировки. */
             String[] strArrTech = householdOf(lowerCase);
@@ -1181,7 +1223,7 @@ public class MainActivity extends Activity {
             item.status = "бытовая химия";
             item.risk = strArrTech[2];
             item.note = strArrTech[3];
-        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && materialOf(lowerCase) != null) {
+        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && item.pharma == null && materialOf(lowerCase) != null) {
             /* Только то, чего нет в косметической базе: иначе материал мог бы
                перекрыть регламентное ограничение на реальный ингредиент. */
             String[] strArrMaterial = materialOf(lowerCase);
@@ -1189,7 +1231,7 @@ public class MainActivity extends Activity {
             item.status = "материал";
             item.risk = strArrMaterial[2];
             item.note = strArrMaterial[3];
-        } else if (!item.catalog && item.law.isEmpty() && item.food == null && item.foodName == null) {
+        } else if (!item.catalog && item.law.isEmpty() && item.food == null && item.foodName == null && item.pharma == null) {
             item.role = "не распознан";
             item.risk = "неизвестно";
         } else {
@@ -1262,6 +1304,43 @@ public class MainActivity extends Activity {
             }
         }
         return null;
+    }
+
+    /* Человекочитаемая расшифровка гармонизированной классификации CLP (Annex VI):
+       коды опасности вида «Skin Sens. 1B, Asp. Tox. 1» → свойства на русском.
+       Используется в подсказке к красной плашке, чтобы «высокий риск» не был без
+       объяснения. Возвращает перечисление через «; » или пустую строку. */
+    static String hazardPlain(String hazard) {
+        if (hazard == null || hazard.isEmpty()) {
+            return "";
+        }
+        String[][] map = {
+            {"Carc.", "канцероген"},
+            {"Muta.", "мутаген"},
+            {"Repr.", "вреден для репродуктивной функции"},
+            {"Asp. Tox.", "токсичен при проглатывании"},
+            {"Acute Tox.", "остро токсичен"},
+            {"Skin Corr.", "вызывает ожоги кожи"},
+            {"Skin Irrit.", "раздражает кожу"},
+            {"Eye Dam.", "вызывает повреждения глаз"},
+            {"Eye Irrit.", "раздражает глаза"},
+            {"Skin Sens.", "сенсибилизатор кожи (аллерген)"},
+            {"Resp. Sens.", "сенсибилизатор дыхательных путей"},
+            {"STOT RE", "токсичен при повторном воздействии"},
+            {"STOT SE", "токсичен при однократном воздействии"},
+            {"Flam.", "легковоспламеняющийся"},
+            {"Aquatic", "токсичен для водной среды"},
+        };
+        StringBuilder out = new StringBuilder();
+        for (String[] m : map) {
+            if (hazard.contains(m[0])) {
+                if (out.length() > 0) {
+                    out.append("; ");
+                }
+                out.append(m[1]);
+            }
+        }
+        return out.toString();
     }
 
     static String worseRisk(String a, String b) {
@@ -1478,7 +1557,9 @@ public class MainActivity extends Activity {
        затем сам состав (попадания в базу косметики, пищевые добавки E-xxxx,
        слова-материалы), затем название с описанием. Каждая находка добавляет вес,
        берём максимальный; при равенстве выигрывает тот, что выше в CAT_ORDER. */
-    static final String[] CAT_ORDER = {"cosmetics", "food", "clothes", "household", "pharma", "electronics", "other"};
+    static final String[] CAT_ORDER = {"cosmetics", "food", "clothes", "household", "pharma", "electronics",
+            "furniture", "tableware", "stationery", "tools", "auto", "books", "pet", "sports", "garden",
+            "toys", "building", "other"};
 
     static final String[] CAT_KEYS_COSMETICS = {"космет", "крем", "шампун", "бальзам для волос", "гель для душа", "мыло",
             "сыворотк", "маска для", "лосьон", "дезодорант", "зубная паст", "зубной эликсир", "ополаскиватель для полости",
@@ -1535,17 +1616,57 @@ public class MainActivity extends Activity {
             "люстр", "фонарик", "батарейк", "элемент питания", "карта памяти", "флешк", "жесткий диск", "ssd",
             "проектор", "квадрокоптер", "электросамокат", "веб-камер", "микрофон", "геймпад", "джойстик", "стабилизатор"};
 
-    /* Товары, которым разбор по составу не положен в принципе: диван из
-        жаккарда — не одежда, пусть в составе и ткань. Ярлык такого домена
-        весит три — больше, чем догадка по составу (два), но меньше, чем
-        прямой ярлык разбираемой категории (пять). */
-    static final String[] CAT_KEYS_OTHER_DOMAIN = {"мебель", "кресло", "диван", "комод", "стул", "шкаф", "полк",
-            "тумбочк", "посуда", "сковород", "кастрюл", "канцеляр", "папка", "степлер", "инструмент", "дрель",
-            "перфоратор", "шуруповёрт", "гаечн", "автотовары", "автомобильн", "моторн", "книга", "книги", "книжк",
-            "лоток", "корм", "животным", "когтеточк", "спорттовар", "турист", "палатк", "спальник", "удобрени",
-            "игрушк", "пазл", "головоломк", "конструктор", "кукл", "лепк", "пластилин", "радиоуправляем",
-            "набор для творчеств", "мягка игрушк", "антистресс", "фиджет", "сортир", "пирамидк", "стекломасс",
-            "рассада", "лакокрасочн", "ламинат", "плитка", "обои", "герметик", "монтажн пен"};
+    /* Товары, которым разбор по составу не положен в принципе, но которым
+       честно показываем свою метку вместо свалки «Прочее». Доменное слово
+       весит пять — как прямой ярлык: перебивает слабую догадку по составу
+       (волокно у дивана, «курица» в корме). При ничьей разбираемая категория
+       старше в CAT_ORDER и побеждает. Диван из жаккарда — мебель, а не одежда. */
+    static final String[] CAT_KEYS_FURNITURE = {"мебель", "кресло", "кресел", "диван", "комод", "стул",
+            "шкаф", "полк", "тумбочк", "стеллаж", "банкетк", "этажерк"};
+    static final String[] CAT_KEYS_TABLEWARE = {"кастрюл", "сковород", "сотейник", "казан", "тарелк",
+            "салатник", "поднос", "половник", "шумовк", "толкушк", "сотейник", "контейнер для запекан"};
+    static final String[] CAT_KEYS_STATIONERY = {"канцеляр", "канцтовар", "степлер", "дырокол",
+            "стакан для канцеляр", "подставка для канцеляр"};
+    static final String[] CAT_KEYS_TOOLS = {"строительн инструмент", "электроинструмент", "инструмент",
+            "дрель", "перфоратор", "шуруповёрт", "шуруповерт", "гаечн", "отвёртк", "отвертк",
+            "набор ключей", "набор торцевых", "набор головок"};
+    static final String[] CAT_KEYS_AUTO = {"автотовар", "автомобильн", "моторн", "автомасл", "автохим",
+            "тосол", "антифриз", "автоэмал", "автолак", "автокосметик"};
+    static final String[] CAT_KEYS_BOOKS = {"книга", "книги", "книжк", "учебник", "энциклопед", "атлас",
+            "пропис", "комикс", "раскраск"};
+    static final String[] CAT_KEYS_PET = {"корм", "животным", "когтеточк", "аквариум", "зоотовар",
+            "переноск", "лоток для кошки", "лотки для кошки", "поилк для животн", "аксессуар для животн"};
+    static final String[] CAT_KEYS_SPORTS = {"спорттовар", "туристическ", "палатк", "спальник", "гантел",
+            "эспандер", "фитнес-резин", "коврик для йоги", "велосипед", "лыж", "коньк", "тюбинг"};
+    static final String[] CAT_KEYS_GARDEN = {"удобрени", "рассада", "теплиц", "саженц", "сеянц", "газон",
+            "средство от сорняк", "средство от вредителей", "средство от вредителя", "фитоспорин"};
+    static final String[] CAT_KEYS_TOYS = {"игрушк", "пазл", "головоломк", "конструктор", "кукл", "лепк",
+            "пластилин", "радиоуправляем", "набор для творчеств", "мягка игрушк", "антистресс", "фиджет",
+            "сортир", "пирамидк", "стекломасс", "набор юнг", "набор для опыт", "опытов"};
+    static final String[] CAT_KEYS_BUILDING = {"лакокрасочн", "герметик", "монтажн пен", "ламинат", "обои",
+            "цемент", "плитк керамическ", "настеночную плитк", "напольн покрытк", "шпатлёвк", "шпаклевк",
+            "гипсокартон", "профлист", "утеплител", "фуга", "плиточн клей", "гидроизоляц"};
+
+    /* Порядок обхода доменных меток (всё после разбираемых категорий). */
+    static final String[] DOMAINS_ORDER = {"furniture", "tableware", "stationery", "tools", "auto",
+            "books", "pet", "sports", "garden", "toys", "building"};
+
+    static String[] catDomainKeys(String str) {
+        switch (str) {
+            case "furniture": return CAT_KEYS_FURNITURE;
+            case "tableware": return CAT_KEYS_TABLEWARE;
+            case "stationery": return CAT_KEYS_STATIONERY;
+            case "tools": return CAT_KEYS_TOOLS;
+            case "auto": return CAT_KEYS_AUTO;
+            case "books": return CAT_KEYS_BOOKS;
+            case "pet": return CAT_KEYS_PET;
+            case "sports": return CAT_KEYS_SPORTS;
+            case "garden": return CAT_KEYS_GARDEN;
+            case "toys": return CAT_KEYS_TOYS;
+            case "building": return CAT_KEYS_BUILDING;
+            default: return null;
+        }
+    }
 
     /* Не категория, а признак: «детский крем» — косметика, но разбираем строже. */
     static final String[] CAT_KEYS_KIDS = {"детск", "детям", "ребёнк", "ребенок", "малыш", "игрушк", "соск",
@@ -1701,10 +1822,17 @@ public class MainActivity extends Activity {
                 strArrWhy[iCos] = "в составе вода, глицерин или отдушка";
             }
         }
-        int iOther = catIndex("other");
-        if (containsAny(lowerCase, CAT_KEYS_OTHER_DOMAIN) && iArr[iOther] < 3) {
-            iArr[iOther] = 3;
-            strArrWhy[iOther] = "товар не из разбираемых доменов";
+        for (String dom : DOMAINS_ORDER) {
+            String[] domKeys = catDomainKeys(dom);
+            int idx = catIndex(dom);
+            /* Доменное слово («диван», «корм», «дрель») в ярлыке или названии —
+               прямой признак, весим как прямой ярлык (пять): перебиваем слабую
+               догадку по составу (волокно у дивана, «курица» в корме). При
+               ничьей разбираемая категория старше в CAT_ORDER и побеждает. */
+            if ((containsAny(lowerCase, domKeys) || containsAny(lowerCase2, domKeys)) && iArr[idx] < 5) {
+                iArr[idx] = 5;
+                strArrWhy[idx] = "домен: категория площадки или название";
+            }
         }
         int iBest = 0;
         int iBestIdx = i - 1;
@@ -1750,6 +1878,39 @@ public class MainActivity extends Activity {
         }
         if ("electronics".equals(str)) {
             return new String[]{"🔌", "Электроника и техника", "Что разбираем: список ингредиентов здесь неприменим — смотрим материалы корпуса и покрытий, а косметическую оценку не применяем."};
+        }
+        if ("furniture".equals(str)) {
+            return new String[]{"🪑", "Мебель", "Что разбираем: список ингредиентов неприменим — смотрим материалы (ЛДСП, массив, металл, обивка) и класс эмиссии формальдегида (безопасен E1 и ниже)."};
+        }
+        if ("tableware".equals(str)) {
+            return new String[]{"🍳", "Посуда и утварь", "Что разбираем: список ингредиентов неприменим — важны материал (нержавейка, алюминий, чугун, стекло) и тип покрытия: антипригарное, эмаль, керамика."};
+        }
+        if ("stationery".equals(str)) {
+            return new String[]{"📎", "Канцелярия", "Что разбираем: список ингредиентов неприменим — смотрим материал и назначение товара."};
+        }
+        if ("tools".equals(str)) {
+            return new String[]{"🛠", "Инструмент", "Что разбираем: список ингредиентов неприменим — смотрим характеристики, материал и комплектацию."};
+        }
+        if ("auto".equals(str)) {
+            return new String[]{"🚗", "Автотовары", "Что разбираем: косметическая оценка неприменима — для жидкостей важны допуск производителя и температура применения, а не список ингредиентов."};
+        }
+        if ("books".equals(str)) {
+            return new String[]{"📚", "Книги и издания", "Что разбираем: это печатное издание, разбор состава здесь неприменим."};
+        }
+        if ("pet".equals(str)) {
+            return new String[]{"🐾", "Товары для животных", "Что разбираем: названия компонентов сверяем с базой; разбор состава корма по косметическим правилам не применяем."};
+        }
+        if ("sports".equals(str)) {
+            return new String[]{"🏋", "Спорт и туризм", "Что разбираем: список ингредиентов неприменим — смотрим материалы, размеры и назначение."};
+        }
+        if ("garden".equals(str)) {
+            return new String[]{"🌱", "Сад и дача", "Что разбираем: косметическая оценка неприменима — для садовой химии важны действующее вещество и сроки обработки."};
+        }
+        if ("toys".equals(str)) {
+            return new String[]{"🧸", "Игрушки", "Что разбираем: важны материал, возрастная маркировка и безопасность — без фталатов, бисфенола A и мелких деталей для малышей до 3 лет."};
+        }
+        if ("building".equals(str)) {
+            return new String[]{"🧱", "Стройматериалы", "Что разбираем: список ингредиентов неприменим — смотрим состав смеси, назначение и класс безопасности для помещений."};
         }
         return new String[]{"📦", "Прочее", "Что разбираем: товар не отнёсся к известной группе, поэтому названия компонентов сверяем с базой без категорных правил."};
     }
@@ -2157,6 +2318,21 @@ public class MainActivity extends Activity {
         } else if ("средний".equals(item.risk)) {
             sb.append("Компонент спорный/потенциально раздражающий — важен процент и тип продукта.");
         }
+        /* Гармонизированная классификация CLP (Annex VI) — главное, почему компонент
+           красный, но раньше она нигде не расшифровывалась: плашка была красной и
+           без объяснения. Переводим коды опасности в человеческие свойства. */
+        if (item.hazard != null && !item.hazard.isEmpty()) {
+            String strHazard = hazardPlain(item.hazard);
+            if (!strHazard.isEmpty()) {
+                if (sb.length() > 0) {
+                    sb.append(' ');
+                }
+                sb.append("Опасные свойства по классификации CLP (ЕС): ").append(strHazard).append('.');
+            }
+        }
+        if (sb.length() == 0 && "высокий".equals(item.risk)) {
+            sb.append("Компонент с высоким риском по справочным классификациям: ограничен или потенциально опасен — проверьте процент и тип продукта.");
+        }
         return sb.toString();
     }
 
@@ -2171,7 +2347,7 @@ public class MainActivity extends Activity {
         return false;
     }
 
-    private static boolean isRiskyItem(Item item) {
+    static boolean isRiskyItem(Item item) {
         return "высокий".equals(item.risk) || "средний".equals(item.risk) || "превышение".equals(item.status) || "с ограничением".equals(item.status);
     }
 
@@ -2433,6 +2609,13 @@ public class MainActivity extends Activity {
             }
         }
         cFood.close();
+        /* Действующее вещество лекарства/БАД (МНН). Если название — фармакологическое
+           действующее вещество, это распознанный компонент, а не «не найдено». */
+        Cursor cPh = this.db.rawQuery("SELECT display FROM pharma_ingredients WHERE name=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT)});
+        if (cPh.moveToFirst()) {
+            row.pharma = cPh.getString(0);
+        }
+        cPh.close();
         /* Присоединение списков ЕС/ЕАЭС по CAS: точно, без ложных срабатываний на
            «грязных» юридических именах («Lidocaine (INN)», «…and its salts»). Даёт
            и «запрещено», которого нет в inci_index: напр. гидрохинон там только
@@ -2459,7 +2642,7 @@ public class MainActivity extends Activity {
                 cClp.close();
             }
         }
-        if (row.law.isEmpty() && !row.catalog && row.food == null && row.foodName == null) {
+        if (row.law.isEmpty() && !row.catalog && row.food == null && row.foodName == null && row.pharma == null) {
             return null;
         }
         return row;
@@ -3079,12 +3262,15 @@ public class MainActivity extends Activity {
 
     private File prepareDb() throws Exception {
         File file = new File(getFilesDir(), "ingredients.db");
-        if (file.exists() && file.length() > 1000000) {
+        String want = readAssetText("db_version.txt");
+        String have = getSharedPreferences("scanbase", 0).getString("db_ver", "");
+        if (file.exists() && file.length() > 1000000 && !want.isEmpty() && want.equals(have)) {
             if (dbSchemaOk(file)) {
                 return file;
             }
             file.delete();
         }
+        Log.i("ScanBase", "db: разворачиваю ingredients.db из APK (db_ver=" + want + ")");
         InputStream inputStreamOpen = getAssets().open("ingredients.db");
         FileOutputStream fileOutputStream = new FileOutputStream(file);
         byte[] bArr = new byte[65536];
@@ -3093,9 +3279,33 @@ public class MainActivity extends Activity {
             if (i <= 0) {
                 fileOutputStream.close();
                 inputStreamOpen.close();
+                getSharedPreferences("scanbase", 0).edit().putString("db_ver", want).apply();
                 return file;
             }
             fileOutputStream.write(bArr, 0, i);
+        }
+    }
+
+    private String readAssetText(String name) {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        try {
+            InputStream in = getAssets().open(name);
+            byte[] buf = new byte[4096];
+            while (true) {
+                int r = in.read(buf);
+                if (r <= 0) {
+                    break;
+                }
+                out.write(buf, 0, r);
+            }
+            in.close();
+        } catch (Exception e) {
+            return "";
+        }
+        try {
+            return new String(out.toByteArray(), "UTF-8").trim();
+        } catch (Exception e) {
+            return "";
         }
     }
 
@@ -3622,7 +3832,7 @@ public class MainActivity extends Activity {
             com.google.zxing.MultiFormatReader reader = new com.google.zxing.MultiFormatReader();
             reader.setHints(hints);
             com.google.zxing.Result result = reader.decode(bb);
-            return result.getText();
+            return upcAToEan(result.getText());
         } catch (com.google.zxing.NotFoundException e) {
             return null;
         } catch (Throwable e) {
@@ -4139,6 +4349,20 @@ public class MainActivity extends Activity {
         return (10 - sum % 10) % 10 == (t.charAt(n - 1) - '0');
     }
 
+    /* UPC-A (12 цифр из декодера) = EAN-13 с ведущим 0; дополняем, иначе 12-значный
+       код не проходит isEan и не ищется в products (GTIN там хранится 13-значным). */
+    static String upcAToEan(String s) {
+        if (s == null || s.length() != 12) {
+            return s;
+        }
+        for (int i = 0; i < 12; i++) {
+            if (!Character.isDigit(s.charAt(i))) {
+                return s;
+            }
+        }
+        return "0" + s;
+    }
+
     /* Штрихкод → реальный состав из Open Beauty/Food Facts (тот же report, что и
        для текста). Не нашли — откат к артикулу маркетплейса. Сеть вне главного
        потока, разбор возвращаем через runOnUiThread. */
@@ -4197,47 +4421,88 @@ public class MainActivity extends Activity {
        «найдено», и показываем название/бренд. null — ни в одной базе нет. */
     String[] fetchBarcode(String strEan) {
         /* Сначала локальная база товаров (собрана из Open-*-Facts): работает без
-           сети и покрывает то, что уже собрано. Нет в локальной — идём в живой API. */
+           сети и покрывает то, что уже собрано. Нет в локальной — идём в живой API,
+           но ВСЕ четыре базы ОПРАШИВАЕМ ПАРАЛЛЕЛЬНО: прежний последовательный перебор
+           с таймаутами коннекта/чтения на каждом хосте давал до ~27 с крутилки
+           «Ищу товар по штрихкоду…». Параллельно + общий дедлайн = ~время одного
+           ответа (или дедлайн), а не сумма четырёх. */
         String[] local = lookupLocalProduct(strEan);
         if (local != null) {
             return local;
         }
-        String[] found = null;
-        for (String strHost : new String[]{"world.openbeautyfacts.org", "world.openfoodfacts.org",
-                "world.openproductsfacts.org", "world.openpetfoodfacts.org"}) {
-            String strBody = httpGet("https://" + strHost + "/api/v2/product/" + strEan);
-            if (strBody == null || !strBody.startsWith("{")) {
-                continue;
+        String[] hosts = {"world.openbeautyfacts.org", "world.openfoodfacts.org",
+                "world.openproductsfacts.org", "world.openpetfoodfacts.org"};
+        java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(hosts.length);
+        try {
+            java.util.concurrent.CompletionService<String[]> cs = new java.util.concurrent.ExecutorCompletionService<>(ex);
+            for (String strHost : hosts) {
+                final String host = strHost;
+                cs.submit(() -> fetchOneBarcode(host, strEan));
             }
-            try {
-                JSONObject j = new JSONObject(strBody);
-                if (j.optInt("status", 0) == 0) {
+            String[] found = null;
+            long deadline = System.currentTimeMillis() + 9000;
+            for (int i = 0; i < hosts.length; i++) {
+                long left = deadline - System.currentTimeMillis();
+                if (left <= 0) {
+                    break;
+                }
+                String[] r;
+                try {
+                    java.util.concurrent.Future<String[]> f = cs.poll(left, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    if (f == null) {
+                        break;
+                    }
+                    r = f.get();
+                } catch (Exception unused) {
                     continue;
                 }
-                JSONObject p = j.optJSONObject("product");
-                if (p == null) {
+                if (r == null) {
                     continue;
                 }
-                String strComp = p.optString("ingredients_text_en", "");
-                if (strComp.isEmpty()) {
-                    strComp = p.optString("ingredients_text", "");
+                if (r[1] != null && !r[1].isEmpty()) {
+                    return r;
                 }
-                String name = p.optString("product_name", "");
-                String brand = p.optString("brands", "");
-                if (!strComp.isEmpty()) {
-                    Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + ": " + strComp.length() + " знаков");
-                    return new String[]{name, strComp, brand, "1"};
-                }
-                /* Нашли товар без состава — запоминаем первое вхождение и идём
-                   дальше: вдруг в другой базе тот же код лежит с составом. */
                 if (found == null) {
-                    Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + " без состава");
-                    found = new String[]{name, "", brand, "1"};
+                    found = r;
                 }
-            } catch (Exception unused) {
             }
+            return found;
+        } finally {
+            ex.shutdownNow();
         }
-        return found;
+    }
+
+    /* Один хост Open-*-Facts: {название, состав, бренд, "1"}; состав пустой — товар
+       найден, но ingredients_text не заполнен; null — в этой базе кода нет. */
+    private String[] fetchOneBarcode(String strHost, String strEan) {
+        String strBody = httpGet("https://" + strHost + "/api/v2/product/" + strEan);
+        if (strBody == null || !strBody.startsWith("{")) {
+            return null;
+        }
+        try {
+            JSONObject j = new JSONObject(strBody);
+            if (j.optInt("status", 0) == 0) {
+                return null;
+            }
+            JSONObject p = j.optJSONObject("product");
+            if (p == null) {
+                return null;
+            }
+            String strComp = p.optString("ingredients_text_en", "");
+            if (strComp.isEmpty()) {
+                strComp = p.optString("ingredients_text", "");
+            }
+            String name = p.optString("product_name", "");
+            String brand = p.optString("brands", "");
+            if (!strComp.isEmpty()) {
+                Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + ": " + strComp.length() + " знаков");
+                return new String[]{name, strComp, brand, "1"};
+            }
+            Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + " без состава");
+            return new String[]{name, "", brand, "1"};
+        } catch (Exception unused) {
+            return null;
+        }
     }
 
     /* Поиск товара в локальной таблице products (barcode→name/brand/ingredients).

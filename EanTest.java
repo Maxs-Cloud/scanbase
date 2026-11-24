@@ -37,6 +37,17 @@ public class EanTest {
         System.out.println((ok ? "ok   " : "FAIL ") + ean + " -> «" + got + "»" + (ok ? "" : "  ожидали «" + wantRegion + "»"));
     }
 
+    /* upcAToEan: 12-значный UPC-A из декодера дополняется ведущим 0 до EAN-13,
+       иначе он не проходит isEan и не ищется в products. Прочие длины — как есть. */
+    static void upc(String in, String want) {
+        total++;
+        String got = MainActivity.upcAToEan(in);
+        boolean ok = (want == null) ? (got == null) : want.equals(got);
+        if (!ok) fails++;
+        System.out.println((ok ? "ok   " : "FAIL ") + "upcA(" + in + ") -> " + got
+                + (ok ? "" : "  ожидали «" + want + "»"));
+    }
+
     public static void main(String[] a) {
         // GS1-префикс → зона регистрации
         gs("4601234567897", "Россия");
@@ -64,6 +75,15 @@ public class EanTest {
         check("1234567a", false);
         check("", false);
         check(null, false);
+        // UPC-A (12 цифр из декодера) → EAN-13 с ведущим 0
+        upc("884400381163", "0884400381163");   // реальный UPC-A из дампа OBF
+        upc("012345678905", "0012345678905");
+        upc("5901234123457", "5901234123457");  // EAN-13 — без изменений
+        upc("96385074", "96385074");            // EAN-8 — без изменений
+        upc("12345678901a", "12345678901a");    // не цифры — без изменений
+        upc("", "");
+        upc(null, null);
+        check(MainActivity.upcAToEan("884400381163"), true); // после дополнения — валидный EAN-13
         System.out.println(fails == 0 ? "EanTest: всё зелёное (" + total + ")"
                 : "EanTest: ПРОВАЛОВ " + fails + " из " + total);
         if (fails > 0) System.exit(1);
