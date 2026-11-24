@@ -60,6 +60,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     private TextView aiBody;
     private Button aiButton;
+    private Button dlButton;
     private LinearLayout aiPanel;
     private TextView aiStatus;
     private FrameLayout content;
@@ -405,16 +406,13 @@ public class MainActivity extends Activity {
            переносами строк и подписями обрывается на первых токенах, а абзац
            модель дописывает до конца. Порядок доводов задан явно — это и есть
            структура, только та, которую маленькая модель выдерживает. */
-        sb.append("\nНапиши по-русски пять предложений одним абзацем, как человек, который читает составы профессионально и объясняет их другу. Порядок такой: ").append(catFirstHint(strCat)).append("; ");
+        sb.append("\nНапиши по-русски одним абзацем (шесть-семь предложений), как опытный человек, который читает составы и спокойно объясняет другу: что здесь хорошо, что настораживает и что с этим делать. Не список и не заголовки — связный текст. Порядок такой: ").append(catFirstHint(strCat)).append("; ");
         if ("electronics".equals(strCat) || "clothes".equals(strCat) || "other".equals(strCat)) {
-            /* У вещи из ткани и у техники «компоненты состава» — не то, о чём
-               спрашивают покупатели, и на этом месте модель начинала выдумывать
-               ингредиенты. Просим говорить про материалы и эксплуатацию. */
-            sb.append("из чего это сделано и какие из перечисленных названий за это отвечают; что может смутить; кому не подойдёт; брать ли за эту цену и ").append(catLastHint(strCat));
-            sb.append(". Перечисленных названий не выдумывай и не переводя; если их мало или они не о товаре, так и скажи.");
+            sb.append("из чего это сделано и какие из перечисленных названий за это отвечают — каждое названное назови и одной фразой объясни простыми словами, на что оно влияет при использовании; что может смутить покупателя и почему; кому такая вещь не подойдёт; в итоге — брать или нет за эту цену и ").append(catLastHint(strCat));
+            sb.append(". Называй только названия из перечисленного выше, без перевода и без выдумки; если названий мало или они не про этот товар — честно скажи об этом и говори про материалы и эксплуатацию, а ингредиенты не выдумывай.");
         } else {
-            sb.append("один-два компонента из строки «Хорошее» и что они делают; компонент из строки «Спорное» и чем он мешает; кому стоит пройти мимо; брать ли за эту цену и ").append(catLastHint(strCat));
-            sb.append(". Компоненты называй только те, что перечислены выше, и ровно как они написаны, без перевода. Придуманные названия, проценты и бренд не упоминай.");
+            sb.append("сначала одним предложением скажи, что это за товар и для чего; затем назови компонент из строки «Хорошее в составе» и простыми словами объясни, что он делает и почему это плюс; затем назови компонент из строки «Спорное и вредное в составе» и чем он может мешать — по делу, без запугивания; скажи, кому стоит пройти мимо; в итоге — брать или нет за эту цену и ").append(catLastHint(strCat));
+            sb.append(". Строго разделяй списки: полезное бери только из строки «Хорошее в составе», а настораживающее — только из строки «Спорное и вредное в составе»; не переноси названия между ними, не повторяй одно и то же название дважды и не приписывай пользы тому, что стоит в «Спорном». Каждое названное название поясняй простыми словами, но пиши его ровно как в списке и без перевода. Если в «Хорошем в составе» пусто или один компонент — так и скажи. Придуманные названия, проценты и бренд не упоминай.");
         }
         return sb.toString();
     }
@@ -615,6 +613,12 @@ public class MainActivity extends Activity {
         button.setOnClickListener(new MainActivity$$ExternalSyntheticLambda9(this));
         this.aiButton = button;
         linearLayout2.addView(button, wrap());
+        Button buttonDl = new Button(this);
+        buttonDl.setAllCaps(false);
+        buttonDl.setTextSize(13.0f);
+        this.dlButton = buttonDl;
+        wireDlListener();
+        linearLayout2.addView(buttonDl, wrap());
         ScrollView scrollView = new ScrollView(this);
         TextView textView3 = new TextView(this);
         textView3.setTextSize(15.0f);
@@ -3040,13 +3044,33 @@ public class MainActivity extends Activity {
             this.aiStop = true;
             this.aiStatus.setText("Останавливаю…");
         } else if (this.downloader.running()) {
-            this.downloader.cancel();
-            this.aiStatus.setText("Скачивание отменено.");
+            this.aiStatus.setText("Сначала дождись или отмени скачивание модели.");
         } else if (LlamaModel.modelSize(this) <= 10000000) {
-            startDownload();
+            this.aiStatus.setText("Модели нет — сначала нажми «Скачать модель» ниже.");
         } else {
             startAiReview();
         }
+    }
+
+    /* Отдельная кнопка вкладки ИИ: качает модель по ссылке из интернета и тем же
+       нажатием отменяет незавершённую загрузку. Отзыв (onAiButton) теперь только
+       пишет — скачивание вынесено сюда, чтобы кнопки не путались. */
+    private void onDownloadButton() {
+        if (this.downloader.running()) {
+            this.downloader.cancel();
+            this.aiStatus.setText("Скачивание отменено.");
+            refreshAiPanel();
+        } else {
+            startDownload();
+        }
+    }
+
+    /* Лямбда-слушатель вынесен из buildAiPanel: в декомпилированном исходнике там
+       уже есть метод lambda$buildAiPanel$0 (слушатель aiButton), и лямбда отсюда
+       получила бы то же имя — D8 «игнорирует» дубликат и кнопка слушает не тот
+       обработчик. В отдельном методе имя сгенерированной лямбды не конфликтует. */
+    private void wireDlListener() {
+        this.dlButton.setOnClickListener(view -> onDownloadButton());
     }
 
     private void open() {
@@ -3442,18 +3466,24 @@ public class MainActivity extends Activity {
         if (this.aiBusy) {
             this.aiButton.setEnabled(true);
             this.aiButton.setText("Стоп");
+            this.dlButton.setVisibility(View.GONE);
             this.aiStatus.setText("Пишу общее мнение, ждём до " + this.aiBudgetSec + " с — текст появляется по мере генерации.");
             return;
         }
         this.aiButton.setEnabled(true);
         long jModelSize = LlamaModel.modelSize(this);
         if (jModelSize > 10000000) {
-            this.aiStatus.setText("Модель на месте: " + mb(jModelSize) + ". Напишу общее мнение в четыре предложения.");
+            this.dlButton.setVisibility(View.GONE);
+            this.aiStatus.setText("Модель на месте: " + mb(jModelSize) + ". Напишу общее мнение по составу.");
             this.aiButton.setText(this.lastItems == null ? "Сначала сделай разбор" : "Написать отзыв заново");
             return;
         }
-        this.aiStatus.setText("Модель не скачана. Понадобится " + mb(1117320736L) + " (Qwen2.5-1.5B, q4_k_m) — файл ляжет во внешние данные приложения, разбор без него работает как обычно.");
-        this.aiButton.setText("Скачать модель " + mb(1117320736L));
+        boolean running = this.downloader.running();
+        this.dlButton.setVisibility(View.VISIBLE);
+        this.dlButton.setText(running ? "Отменить скачивание" : "Скачать модель " + mb(1117320736L));
+        this.aiButton.setText("Написать отзыв");
+        this.aiButton.setEnabled(!running);
+        this.aiStatus.setText("Модель не скачана. Понадобится " + mb(1117320736L) + " (Qwen2.5-1.5B, q4_k_m) — файл ляжет во внешние данные приложения, разбор без него работает как обычно. Источник: hf-mirror.com/Qwen/Qwen2.5-1.5B-Instruct-GGUF");
     }
 
     private void rememberAlias(String str, String str2) {
@@ -3911,7 +3941,8 @@ public class MainActivity extends Activity {
 
     private void startDownload() {
         this.aiBody.setText("");
-        this.aiButton.setText("Отменить");
+        this.dlButton.setText("Отменить скачивание");
+        this.aiButton.setEnabled(false);
         this.aiStatus.setText("Начинаю загрузку…");
         this.downloader.start(this, new DownloadCallback(this));
     }
