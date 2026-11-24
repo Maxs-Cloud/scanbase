@@ -11,6 +11,12 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
+import android.content.res.ColorStateList;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -2427,6 +2433,67 @@ public class MainActivity extends Activity {
         return new LinearLayout.LayoutParams(-1, -2);
     }
 
+    /* Ровная «чип»-кнопка: фикс. высота, скругление, без дефолтных кривых
+       отступов Material — иначе на Huawei кнопки прыгают по высоте и ширине. */
+    private Button chip(String text, boolean primary) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setGravity(Gravity.CENTER);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        int pad = dp(2);
+        b.setPadding(pad, 0, pad, 0);
+        b.setHorizontallyScrolling(false);
+        b.setLetterSpacing(-0.02f);
+        b.setStateListAnimator(null);
+        b.setElevation(0f);
+        b.setBackground(chipBg(primary));
+        b.setTextColor(primary ? Color.WHITE : Color.parseColor("#1F2937"));
+        // Текст обязан влезать в чип: на API 26+ включаем авторазмер (уменьшит кегль,
+        // если слово длиннее кнопки), ниже 26 — просто маленький кегль + малый паддинг.
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            b.setAutoSizeTextTypeUniformWithConfiguration(dp(8), dp(12), 1, TypedValue.COMPLEX_UNIT_PX);
+        }
+        return b;
+    }
+
+    /* Отступы между чипами: у первого нет левого, у последнего нет правого. */
+    private LinearLayout.LayoutParams chipLp(boolean first) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        int m = dp(3);
+        lp.leftMargin = first ? 0 : m;
+        lp.rightMargin = m;
+        return lp;
+    }
+
+    private int dp(int v) {
+        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
+                getResources().getDisplayMetrics()));
+    }
+
+    private StateListDrawable chipBg(boolean primary) {
+        int base = primary ? Color.parseColor("#2563EB") : Color.parseColor("#EEF2F7");
+        int pressed = primary ? Color.parseColor("#1D4ED8") : Color.parseColor("#DCE3EC");
+        int radius = dp(10);
+        StateListDrawable sld = new StateListDrawable();
+        sld.addState(new int[]{android.R.attr.state_pressed}, chipRound(pressed, radius));
+        sld.addState(new int[]{android.R.attr.state_focused}, chipRound(pressed, radius));
+        sld.addState(new int[]{}, chipRound(base, radius));
+        return sld;
+    }
+
+    private GradientDrawable chipRound(int color, int radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(radius);
+        return d;
+    }
+
     /* Материалы деталей — обувь, мебель, посуда, инвентарь. Косметическая база
        их не знает, и без этой таблицы они валились бы в «не опознан»: на
        ботинках разбор и показывал одну «шерсть» из поля «Состав». Риск тут
@@ -3829,37 +3896,25 @@ public class MainActivity extends Activity {
         linearLayout.addView(this.error, match());
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(0);
-        Button button = new Button(this);
-        button.setText("Проверить");
-        button.setAllCaps(false);
-        button.setTextSize(11.0f);
+        row1.setBaselineAligned(false);
+        Button button = chip("Проверить", true);
         button.setOnClickListener(new MainActivity$$ExternalSyntheticLambda1(this));
-        row1.addView(button, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        Button button2 = new Button(this);
-        button2.setText("Вставить");
-        button2.setAllCaps(false);
-        button2.setTextSize(11.0f);
+        row1.addView(button, chipLp(true));
+        Button button2 = chip("Вставить", false);
         button2.setOnClickListener(new MainActivity$$ExternalSyntheticLambda2(this));
-        row1.addView(button2, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        Button button3 = new Button(this);
-        button3.setText("Страница");
+        row1.addView(button2, chipLp(false));
+        Button button3 = chip("Страница", false);
         this.pageButton = button3;
-        button3.setAllCaps(false);
-        button3.setTextSize(11.0f);
         button3.setOnClickListener(new MainActivity$$ExternalSyntheticLambda3(this));
-        row1.addView(button3, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        Button button4 = new Button(this);
-        button4.setText("Прилож.");
-        button4.setAllCaps(false);
-        button4.setTextSize(10.0f);
+        row1.addView(button3, chipLp(false));
+        Button button4 = chip("Прилож.", false);
         button4.setOnClickListener(new MainActivity$$ExternalSyntheticLambda4(this));
-        row1.addView(button4, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        Button btnScan = new Button(this);
-        btnScan.setText("Сканер");
-        btnScan.setAllCaps(false);
-        btnScan.setTextSize(10.0f);
+        row1.addView(button4, chipLp(false));
+        Button btnScan = chip("Сканер", false);
         btnScan.setOnClickListener(v -> showScanDialog());
-        row1.addView(btnScan, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams scanLp = chipLp(false);
+        scanLp.rightMargin = 0;
+        row1.addView(btnScan, scanLp);
         linearLayout.addView(row1, match());
         WebView webView = new WebView(this);
         this.resultWeb = webView;
