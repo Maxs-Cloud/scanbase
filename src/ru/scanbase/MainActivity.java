@@ -1995,6 +1995,42 @@ public class MainActivity extends Activity {
                 }
             }
         }
+        /* Многословная русская фраза («нормализованные сливки», «закваска
+           молочнокислых микроорганизмов»): целиком в базе её нет, но опорное
+           слово есть. Берём самое длинное слово, которое ТОЧНО совпадает с
+           именем в базе (без префиксных домыслов). */
+        if (str.indexOf(' ') >= 0) {
+            String best = null;
+            for (String word : str.split("\\s+")) {
+                if (norm(word).length() < 4) {
+                    continue;
+                }
+                String hit = exactName(word);
+                if (hit != null && (best == null || hit.length() > best.length())) {
+                    best = hit;
+                }
+            }
+            if (best != null) {
+                return best;
+            }
+        }
+        return null;
+    }
+
+    /* Точное совпадение одного слова с именем в индексе (с учётом транслитерации),
+       без префиксных эвристик — чтобы фолбэк по словам не цеплял лишнего. */
+    private String exactName(String word) {
+        String wn = norm(word);
+        if (wn.isEmpty()) {
+            return null;
+        }
+        String wt = norm(translit(wn));
+        for (Object o : this.nameIdx) {
+            String nn = norm((String) o);
+            if (nn.equals(wn) || (!wt.equals(wn) && norm(translit(nn)).equals(wt))) {
+                return (String) o;
+            }
+        }
         return null;
     }
 
@@ -2728,16 +2764,31 @@ public class MainActivity extends Activity {
     }
 
     static String notFoundReason(JSONObject jSONObject) {
-        String lowerCase = nz(jSONObject.optString("notFound", "")).toLowerCase(Locale.ROOT);
+        return notFoundReason(jSONObject.optString("via", ""), jSONObject.optString("url", ""),
+                jSONObject.optString("notFound", ""), jSONObject.optString("title", ""));
+    }
+
+    /* Разделено на строковую перегрузку: android.jar — только для компиляции, его
+       org.json.JSONObject в JVM кидает Stub!, поэтому тесты зовут именно её. */
+    static String notFoundReason(String strViaRaw, String strUrlRaw, String strNotFoundRaw, String strTitleRaw) {
+        /* Состав по штрихкоду приходит из API Open Beauty/Food Facts, а не со
+           страницы площадки: у такого отчёта служебный url без пути («штрихкод
+           123…»), и url-эвристики ниже приняли бы его за редирект на главную и
+           отвергли найденный товар. Для API-источников отказ по ссылке неприменим. */
+        String via = nz(strViaRaw).toLowerCase(Locale.ROOT);
+        if ("barcode".equals(via)) {
+            return null;
+        }
+        String lowerCase = nz(strNotFoundRaw).toLowerCase(Locale.ROOT);
         if (!lowerCase.isEmpty()) {
             return "на странице написано «" + lowerCase + "»";
         }
-        String lowerCase2 = nz(jSONObject.optString("url", "")).toLowerCase(Locale.ROOT);
-        String lowerCase3 = nz(jSONObject.optString("title", "")).toLowerCase(Locale.ROOT);
+        String lowerCase2 = nz(strUrlRaw).toLowerCase(Locale.ROOT);
+        String lowerCase3 = nz(strTitleRaw).toLowerCase(Locale.ROOT);
         String[] strArr = {"не найден", "не найдена", "не существует", "не доступен", "такого товара нет", "товар отсутствует", "ничего не найдено", "404", "not found", "страница не найдена", "поиск по сайту"};
         for (int i = 0; i < 11; i++) {
             if (lowerCase3.contains(strArr[i])) {
-                return "площадка сообщает: «" + jSONObject.optString("title", "") + "»";
+                return "площадка сообщает: «" + nz(strTitleRaw) + "»";
             }
         }
         /* Схему снимаем любую: у chrome-error:// путь резался по «://» и
@@ -3054,6 +3105,7 @@ public class MainActivity extends Activity {
             db = SQLiteDatabase.openDatabase(f.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
             db.rawQuery("SELECT func FROM cosmetic_ingredients LIMIT 1", null).close();
             db.rawQuery("SELECT name FROM food_ingredients LIMIT 1", null).close();
+            db.rawQuery("SELECT barcode FROM products LIMIT 1", null).close();
             return true;
         } catch (Exception e) {
             return false;
@@ -3494,66 +3546,33 @@ public class MainActivity extends Activity {
         return expandBySpace(base).size() > base.size();
     }
 
-    private static final int REQ_CAMERA = 101;
     private static final int REQ_GALLERY = 102;
     private Uri cameraPhotoUri;
 
     private void showScanDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("Сканировать штрихкод")
-                .setItems(new String[]{"📷 Камера", "🖼 Галерея"}, (d, which) -> {
-                    if (which == 0) launchCamera();
-                    else launchGallery();
-                })
-                .setNegativeButton("Отмена", null)
-                .show();
-    }
-
-    private void launchCamera() {
-        if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 99);
-            return;
-        }
-        doLaunchCamera();
-    }
-
-    private void doLaunchCamera() {
+        /* Не показываем своё окошко «Камера/Галерея». Открываем системный выбор
+           приложения: основной интент — выбор картинки (галерея/файлы, какие
+           стоят на телефоне), а камера добавляется через EXTRA_INITIAL_INTENTS,
+           чтобы ОС показала и камеру тоже. Пишем фото в файл (EXTRA_OUTPUT),
+           поэтому разрешение CAMERA не просим — снимок делает само приложение. */
         try {
             ContentValues cv = new ContentValues();
             cv.put(MediaStore.Images.Media.DISPLAY_NAME, "scan_" + System.currentTimeMillis() + ".jpg");
             cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
             cameraPhotoUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
-            if (cameraPhotoUri == null) {
-                showError("Не удалось создать файл для фото.");
-                return;
+            Intent capture = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            if (cameraPhotoUri != null) {
+                capture.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri);
+                capture.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }
-            Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-            intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri);
-            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivityForResult(intent, REQ_CAMERA);
+            Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+            pick.setType("image/*");
+            pick.addCategory(Intent.CATEGORY_OPENABLE);
+            Intent chooser = Intent.createChooser(pick, "Чем сканировать штрихкод");
+            chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{capture});
+            startActivityForResult(chooser, REQ_GALLERY);
         } catch (Exception e) {
-            showError("Камера недоступна: " + e.getMessage());
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
-        super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == 99 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            doLaunchCamera();
-        } else {
-            showError("Разрешение на камеру не выдано.");
-        }
-    }
-
-    private void launchGallery() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("image/*");
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        try {
-            startActivityForResult(Intent.createChooser(intent, "Выбери фото штрихкода"), REQ_GALLERY);
-        } catch (Exception e) {
-            showError("Галерея недоступна.");
+            showError("Нет доступного приложения для сканирования.");
         }
     }
 
@@ -3562,10 +3581,11 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK) return;
         Uri uri = null;
-        if (requestCode == REQ_CAMERA) {
-            uri = cameraPhotoUri;
-        } else if (requestCode == REQ_GALLERY && data != null) {
-            uri = data.getData();
+        if (requestCode == REQ_GALLERY) {
+            /* Системный выбор: галерея вернёт uri в data, а камера (тот же
+               запрос через EXTRA_INITIAL_INTENTS) пишет в cameraPhotoUri и
+               data может быть null — тогда берём файл камеры. */
+            uri = (data != null && data.getData() != null) ? data.getData() : cameraPhotoUri;
         }
         if (uri == null) return;
         String code = decodeBarcode(uri);
@@ -3593,8 +3613,12 @@ public class MainActivity extends Activity {
             hints.put(com.google.zxing.DecodeHintType.TRY_HARDER, Boolean.TRUE);
             hints.put(com.google.zxing.DecodeHintType.POSSIBLE_FORMATS, java.util.Arrays.asList(
                     com.google.zxing.BarcodeFormat.EAN_13, com.google.zxing.BarcodeFormat.EAN_8,
-                    com.google.zxing.BarcodeFormat.UPC_A, com.google.zxing.BarcodeFormat.QR_CODE,
-                    com.google.zxing.BarcodeFormat.CODE_128));
+                    com.google.zxing.BarcodeFormat.UPC_A, com.google.zxing.BarcodeFormat.UPC_E,
+                    com.google.zxing.BarcodeFormat.QR_CODE, com.google.zxing.BarcodeFormat.DATA_MATRIX,
+                    com.google.zxing.BarcodeFormat.AZTEC, com.google.zxing.BarcodeFormat.PDF_417,
+                    com.google.zxing.BarcodeFormat.CODE_128, com.google.zxing.BarcodeFormat.CODE_39,
+                    com.google.zxing.BarcodeFormat.CODE_93, com.google.zxing.BarcodeFormat.ITF,
+                    com.google.zxing.BarcodeFormat.CODABAR));
             com.google.zxing.MultiFormatReader reader = new com.google.zxing.MultiFormatReader();
             reader.setHints(hints);
             com.google.zxing.Result result = reader.decode(bb);
@@ -4139,22 +4163,48 @@ public class MainActivity extends Activity {
                     }
                     return;
                 }
-                String strArticle = articleUrl(strEan);
-                if (!strArticle.isEmpty()) {
-                    urlBox.setText(strArticle);
-                    open();
-                } else {
-                    showError("Товар со штрихкодом " + strEan + " не найден в Open Beauty/Food Facts, и как артикул маркетплейса не открывается.");
+                /* Товар в базах есть, но поля «состав» в нём нет (или нет вовсе).
+                   EAN не является артикулом Ozon/WB, поэтому карточку площадки по
+                   нему не открываем — показываем то, что известно из самого кода
+                   (GS1-префикс) и из базы (название/бренд), и просим состав. */
+                String region = gs1Region(strEan);
+                String head = "Штрихкод " + esc(strEan) + " — EAN/GTIN, в нём зашифрован только номер"
+                        + (region.isEmpty() ? "" : " (зона регистрации GS1: " + esc(region) + ")") + ".\n\n";
+                if (res != null) {
+                    Log.i("ScanBase", "штрихкод " + strEan + " найден, но состав не описан: " + res[0] + " / " + res[2]);
+                    clearReport();
+                    showText(head + "Товар найден в открытых базах: "
+                            + esc(res[0].isEmpty() ? "(без названия)" : res[0])
+                            + (res[2].isEmpty() ? "" : " — " + esc(res[2]))
+                            + ", но поле «состав» там не заполнено.\n\n"
+                            + "Вставьте текст состава прямо в поле или ссылку на карточку — разберу.");
+                    return;
                 }
+                Log.i("ScanBase", "штрихкод " + strEan + " не найден ни в одной открытой базе");
+                clearReport();
+                showText(head + "Такого кода нет ни в одной открытой базе (Beauty / Food / Products / Pet Food Facts).\n\n"
+                        + "Штрихкод не совпадает с артикулом Ozon/Wildberries, открыть карточку по нему нельзя.\n\n"
+                        + "Как получить разбор:\n"
+                        + "• найдите товар по штрихкоду на площадке и вставьте ссылку на карточку;\n"
+                        + "• или вставьте текст состава (ингредиенты) прямо в поле — разберу его.");
             });
         }).start();
     }
 
-    /* OBF (косметика) в приоритете, затем OFF (еда). Ответ v2 вложен: товар под
-       ключом "product"; проекция ?fields= ненадёжна, берём полный ответ. Английский
-       состав в приоритете, иначе общий ingredients_text. */
+    /* Открытые базы Open-*-Facts, перебираем все: косметика, еда, непродовольственные
+       товары, корма. Возвращает {название, состав, бренд, "1"}; состав может быть
+       пустым, если товар найден, ноingredients_text не заполнен — тогда это тоже
+       «найдено», и показываем название/бренд. null — ни в одной базе нет. */
     String[] fetchBarcode(String strEan) {
-        for (String strHost : new String[]{"world.openbeautyfacts.org", "world.openfoodfacts.org"}) {
+        /* Сначала локальная база товаров (собрана из Open-*-Facts): работает без
+           сети и покрывает то, что уже собрано. Нет в локальной — идём в живой API. */
+        String[] local = lookupLocalProduct(strEan);
+        if (local != null) {
+            return local;
+        }
+        String[] found = null;
+        for (String strHost : new String[]{"world.openbeautyfacts.org", "world.openfoodfacts.org",
+                "world.openproductsfacts.org", "world.openpetfoodfacts.org"}) {
             String strBody = httpGet("https://" + strHost + "/api/v2/product/" + strEan);
             if (strBody == null || !strBody.startsWith("{")) {
                 continue;
@@ -4172,15 +4222,100 @@ public class MainActivity extends Activity {
                 if (strComp.isEmpty()) {
                     strComp = p.optString("ingredients_text", "");
                 }
-                if (strComp.isEmpty()) {
-                    continue;
+                String name = p.optString("product_name", "");
+                String brand = p.optString("brands", "");
+                if (!strComp.isEmpty()) {
+                    Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + ": " + strComp.length() + " знаков");
+                    return new String[]{name, strComp, brand, "1"};
                 }
-                Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + ": " + strComp.length() + " знаков");
-                return new String[]{p.optString("product_name", ""), strComp};
+                /* Нашли товар без состава — запоминаем первое вхождение и идём
+                   дальше: вдруг в другой базе тот же код лежит с составом. */
+                if (found == null) {
+                    Log.i("ScanBase", "штрихкод " + strEan + " найден на " + strHost + " без состава");
+                    found = new String[]{name, "", brand, "1"};
+                }
             } catch (Exception unused) {
             }
         }
+        return found;
+    }
+
+    /* Поиск товара в локальной таблице products (barcode→name/brand/ingredients).
+       Возвращает {name, ingredients, brand, "1"} или null. Состав пустой — не считаем
+       находкой, пусть живой API попробует (там может быть свежее). */
+    private String[] lookupLocalProduct(String strEan) {
+        if (this.db == null) {
+            return null;
+        }
+        Cursor c = null;
+        try {
+            c = this.db.rawQuery("SELECT name, brand, ingredients FROM products WHERE barcode = ? LIMIT 1",
+                    new String[]{strEan});
+            if (c.moveToFirst()) {
+                String comp = nz(c.getString(2));
+                if (!comp.isEmpty()) {
+                    Log.i("ScanBase", "штрихкод " + strEan + " найден в локальной базе товаров");
+                    return new String[]{nz(c.getString(0)), comp, nz(c.getString(1)), "1"};
+                }
+            }
+        } catch (Exception e) {
+            /* таблицы products может не быть в старой кэшированной БД — молча в API */
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
         return null;
+    }
+
+    /* GS1-префикс EAN/GTIN → зона регистрации компании (не страна производства).
+       Офлайн-таблица по первым трём цифрам; покрывает основные рынки. */
+    static String gs1Region(String ean) {
+        String s = nz(ean).trim();
+        if (s.length() < 3) {
+            return "";
+        }
+        int n;
+        try {
+            n = Integer.parseInt(s.substring(0, 3));
+        } catch (NumberFormatException e) {
+            return "";
+        }
+        Object[][] r = {
+                {0, 139, "США / Канада"}, {200, 299, "внутренняя/ограниченная нумерация"},
+                {300, 379, "Франция"}, {380, 380, "Болгария"}, {383, 383, "Словения"},
+                {385, 385, "Хорватия"}, {387, 387, "Босния и Герцеговина"}, {389, 389, "Черногория"},
+                {400, 440, "Германия"}, {450, 459, "Япония"}, {460, 469, "Россия"},
+                {470, 470, "Киргизия"}, {471, 471, "Тайвань"}, {474, 474, "Эстония"},
+                {475, 475, "Латвия"}, {476, 476, "Азербайджан"}, {477, 477, "Литва"},
+                {478, 478, "Узбекистан"}, {479, 479, "Шри-Ланка"}, {480, 480, "Филиппины"},
+                {481, 481, "Беларусь"}, {482, 482, "Украина"}, {484, 484, "Молдова"},
+                {485, 485, "Армения"}, {486, 486, "Грузия"}, {487, 487, "Казахстан"},
+                {489, 489, "Гонконг"}, {490, 499, "Япония"}, {500, 509, "Великобритания"},
+                {520, 521, "Греция"}, {529, 529, "Кипр"}, {535, 535, "Мальта"},
+                {539, 539, "Ирландия"}, {540, 549, "Бельгия / Люксембург"}, {560, 560, "Португалия"},
+                {570, 579, "Дания"}, {590, 590, "Польша"}, {594, 594, "Румыния"},
+                {599, 599, "Венгрия"}, {600, 601, "ЮАР"}, {609, 609, "Маврикий"},
+                {611, 611, "Марокко"}, {613, 613, "Алжир"}, {616, 616, "Кения"},
+                {619, 619, "Тунис"}, {622, 622, "Египет"}, {626, 626, "Иран"},
+                {628, 628, "Саудовская Аравия"}, {629, 629, "ОАЭ"}, {640, 649, "Финляндия"},
+                {690, 699, "Китай"}, {700, 709, "Норвегия"}, {729, 729, "Израиль"},
+                {730, 739, "Швеция"}, {750, 750, "Мексика"}, {754, 755, "Канада"},
+                {760, 769, "Швейцария"}, {770, 770, "Колумбия"}, {779, 779, "Аргентина"},
+                {780, 780, "Чили"}, {789, 790, "Бразилия"}, {800, 839, "Италия"},
+                {840, 849, "Испания"}, {858, 859, "Чехия"}, {860, 860, "Сербия"},
+                {868, 869, "Турция"}, {870, 879, "Нидерланды"}, {880, 880, "Южная Корея"},
+                {885, 885, "Таиланд"}, {888, 888, "Сингапур"}, {890, 890, "Индия"},
+                {893, 893, "Вьетнам"}, {899, 899, "Индонезия"}, {900, 919, "Австрия"},
+                {930, 939, "Австралия"}, {940, 949, "Новая Зеландия"}, {955, 955, "Малайзия"},
+                {978, 979, "книга (ISBN)"},
+        };
+        for (Object[] range : r) {
+            if (n >= (Integer) range[0] && n <= (Integer) range[1]) {
+                return (String) range[2];
+            }
+        }
+        return "";
     }
 
     private String httpGet(String strUrl) {

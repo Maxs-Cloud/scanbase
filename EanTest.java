@@ -15,7 +15,42 @@ public class EanTest {
         System.out.println((ok ? "ok   " : "FAIL ") + s + " -> " + got + (ok ? "" : "  ожидали «" + want + "»"));
     }
 
+    /* notFoundReason: состав по штрихкоду приходит из API, у отчёта служебный
+       url без пути — отказ по ссылке неприменим, иначе найденный товар ложно
+       помечается «не найден». А редирект реальной площадки на главную ловим. */
+    static void nf(String via, String url, boolean wantNull) {
+        total++;
+        String r = MainActivity.notFoundReason(via, url, "", "");
+        boolean gotNull = (r == null);
+        boolean ok = gotNull == wantNull;
+        if (!ok) fails++;
+        System.out.println((ok ? "ok   " : "FAIL ") + "via=" + via + " url=" + url
+                + " -> " + (r == null ? "null" : "«" + r + "»")
+                + (ok ? "" : "  ожидали " + (wantNull ? "null" : "отказ")));
+    }
+
+    static void gs(String ean, String wantRegion) {
+        total++;
+        String got = MainActivity.gs1Region(ean);
+        boolean ok = wantRegion.equals(got);
+        if (!ok) fails++;
+        System.out.println((ok ? "ok   " : "FAIL ") + ean + " -> «" + got + "»" + (ok ? "" : "  ожидали «" + wantRegion + "»"));
+    }
+
     public static void main(String[] a) {
+        // GS1-префикс → зона регистрации
+        gs("4601234567897", "Россия");
+        gs("5901234123457", "Польша");
+        gs("4006381333931", "Германия");
+        gs("5011234567891", "Великобритания");
+        gs("9781234567890", "книга (ISBN)");
+        // неFoundReason: barcode-путь не отвергаем, редирект площадки — отвергаем
+        nf("barcode", "штрихкод 5901234123457", true);   // API-отчёт без пути — НЕ отказ
+        nf("barcode", "штрихкод 8410757001090", true);
+        nf("", "https://www.ozon.ru/", false);            // редирект на главную — отказ
+        nf("", "https://www.wildberries.ru/catalog/1/detail.aspx", true); // живая карточка
+        nf("", "https://market.yandex.ru/card/x/1234567890123", true);
+        nf("", "chrome-error://chromewebdata/", false);   // битая страница — отказ
         check("5901234123457", true);   // эталонный EAN-13
         check("8410757001090", true);   // реальный Crema Manos из Open Beauty Facts
         check("4006381333931", true);
