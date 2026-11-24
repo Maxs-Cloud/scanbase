@@ -230,9 +230,7 @@ public class MainActivity extends Activity {
         boolean catalog;
         String food;
         String foodName;
-        String pharma;
-        String sup;
-        String exc;
+        String extra;
         String func;
         String hazard;
         List<String[]> law = new ArrayList();
@@ -308,9 +306,7 @@ public class MainActivity extends Activity {
         boolean catalog;
         String food;
         String foodName;
-        String pharma;
-        String sup;
-        String exc;
+        String extra;
         String func;
         String hazard;
         List<String[]> law;
@@ -562,9 +558,7 @@ public class MainActivity extends Activity {
             item.catalog = rowLookup2.catalog;
             item.food = rowLookup2.food;
             item.foodName = rowLookup2.foodName;
-            item.pharma = rowLookup2.pharma;
-            item.sup = rowLookup2.sup;
-            item.exc = rowLookup2.exc;
+            item.extra = rowLookup2.extra;
             item.func = rowLookup2.func;
             item.hazard = rowLookup2.hazard;
             if (!rowLookup2.law.isEmpty()) {
@@ -575,12 +569,8 @@ public class MainActivity extends Activity {
                 item.status = "добавка";
             } else if (rowLookup2.foodName != null) {
                 item.status = "еда";
-            } else if (rowLookup2.pharma != null) {
-                item.status = "вещество";
-            } else if (rowLookup2.sup != null) {
-                item.status = "нутриент";
-            } else if (rowLookup2.exc != null) {
-                item.status = "вспомогательное";
+            } else if (rowLookup2.extra != null) {
+                item.status = "распознан";
             } else {
                 item.status = "найден";
             }
@@ -589,14 +579,8 @@ public class MainActivity extends Activity {
         if ("еда".equals(item.status) && "—".equals(item.role)) {
             item.role = "пищевой продукт";
         }
-        if ("вещество".equals(item.status)) {
-            item.role = "действующее вещество";
-        }
-        if ("нутриент".equals(item.status)) {
-            item.role = "нутриент (БАД)";
-        }
-        if ("вспомогательное".equals(item.status)) {
-            item.role = "вспомогательное вещество";
+        if ("распознан".equals(item.status) && item.extra != null) {
+            item.role = item.extra;
         }
         if ("не найден".equals(item.status) && !"не распознан".equals(item.role)) {
             item.status = "по категории";
@@ -1231,7 +1215,7 @@ public class MainActivity extends Activity {
         } else if (containsAny(lowerCase, SOLVENT)) {
             item.role = "растворитель";
             item.risk = "низкий";
-        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && item.pharma == null && item.sup == null && item.exc == null && householdOf(lowerCase) != null) {
+        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && item.extra == null && householdOf(lowerCase) != null) {
             /* Бытовая химия: роль и риск берём из своего словаря, а не из
                косметического — у ПАВ и щёлочи другие нормировки. */
             String[] strArrTech = householdOf(lowerCase);
@@ -1239,7 +1223,7 @@ public class MainActivity extends Activity {
             item.status = "бытовая химия";
             item.risk = strArrTech[2];
             item.note = strArrTech[3];
-        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && item.pharma == null && item.sup == null && item.exc == null && materialOf(lowerCase) != null) {
+        } else if (item.law.isEmpty() && !item.catalog && item.food == null && item.foodName == null && item.extra == null && materialOf(lowerCase) != null) {
             /* Только то, чего нет в косметической базе: иначе материал мог бы
                перекрыть регламентное ограничение на реальный ингредиент. */
             String[] strArrMaterial = materialOf(lowerCase);
@@ -1247,7 +1231,7 @@ public class MainActivity extends Activity {
             item.status = "материал";
             item.risk = strArrMaterial[2];
             item.note = strArrMaterial[3];
-        } else if (!item.catalog && item.law.isEmpty() && item.food == null && item.foodName == null && item.pharma == null && item.sup == null && item.exc == null) {
+        } else if (!item.catalog && item.law.isEmpty() && item.food == null && item.foodName == null && item.extra == null) {
             item.role = "не распознан";
             item.risk = "неизвестно";
         } else {
@@ -2625,29 +2609,16 @@ public class MainActivity extends Activity {
             }
         }
         cFood.close();
-        /* Действующее вещество лекарства/БАД (МНН). Если название — фармакологическое
-           действующее вещество, это распознанный компонент, а не «не найдено». */
-        Cursor cPh = this.db.rawQuery("SELECT display FROM pharma_ingredients WHERE name=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT)});
-        if (cPh.moveToFirst()) {
-            row.pharma = cPh.getString(0);
+        /* Дополнительный распознанный компонент: действующее вещество лекарства,
+           нутриент/БАД или вспомогательное вещество — всё в одной extra_ingredients,
+           где роль хранится строкой. Приоритет ролей разрешён при сборке таблицы
+           (pharma > supplement > excipient). Проверяем после еды: если слово уже еда,
+           приоритет у еды. */
+        Cursor cExtra = this.db.rawQuery("SELECT role FROM extra_ingredients WHERE name=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT)});
+        if (cExtra.moveToFirst()) {
+            row.extra = cExtra.getString(0);
         }
-        cPh.close();
-        /* Нутриент/БАД-компонент (аминокислота, форма витамина, соль минерала,
-           адаптоген, пробиотик). Проверяем последним: если слово уже еда или
-           лекарство, приоритет у них, а «нутриент» — для того, что больше нигде. */
-        Cursor cSup = this.db.rawQuery("SELECT display FROM supplement_ingredients WHERE name=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT)});
-        if (cSup.moveToFirst()) {
-            row.sup = cSup.getString(0);
-        }
-        cSup.close();
-        /* Вспомогательное вещество (носитель, глазирователь, связующее таблетки).
-           Самый последний приоритет: это то, что не еда, не нутриент и не лекарство,
-           но честно распознано, а не «не распознан». */
-        Cursor cExc = this.db.rawQuery("SELECT display FROM excipient_ingredients WHERE name=? LIMIT 1", new String[]{str.toLowerCase(Locale.ROOT)});
-        if (cExc.moveToFirst()) {
-            row.exc = cExc.getString(0);
-        }
-        cExc.close();
+        cExtra.close();
         /* Присоединение списков ЕС/ЕАЭС по CAS: точно, без ложных срабатываний на
            «грязных» юридических именах («Lidocaine (INN)», «…and its salts»). Даёт
            и «запрещено», которого нет в inci_index: напр. гидрохинон там только
@@ -2674,7 +2645,7 @@ public class MainActivity extends Activity {
                 cClp.close();
             }
         }
-        if (row.law.isEmpty() && !row.catalog && row.food == null && row.foodName == null && row.pharma == null && row.sup == null && row.exc == null) {
+        if (row.law.isEmpty() && !row.catalog && row.food == null && row.foodName == null && row.extra == null) {
             return null;
         }
         return row;
