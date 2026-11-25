@@ -392,7 +392,7 @@ public class MainActivity extends Activity {
         StringBuilder sbBad = new StringBuilder();
         for (Item item : this.lastItems) {
             String strName = stripPercent(item.name);
-            if ("высокий".equals(item.risk)) {
+            if ("высокий".equals(item.risk) || "средний".equals(item.risk)) {
                 appendName(sbBad, strName + roleTag(item.role));
             } else if ("низкий".equals(item.risk)) {
                 appendName(sbGood, strName + roleTag(item.role));
