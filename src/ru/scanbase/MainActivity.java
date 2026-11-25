@@ -2340,17 +2340,6 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
-    private boolean inventedNumbers(String str) {
-        String strAiPrompt = aiPrompt(this.aiBudgetSec);
-        Matcher matcher = Pattern.compile("\\d{1,4}").matcher(str);
-        while (matcher.find()) {
-            if (!strAiPrompt.contains(matcher.group())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     static boolean isRiskyItem(Item item) {
         return "высокий".equals(item.risk) || "средний".equals(item.risk) || "превышение".equals(item.status) || "с ограничением".equals(item.status);
     }
@@ -3676,9 +3665,6 @@ public class MainActivity extends Activity {
         }
         if (str != null && !str.trim().isEmpty()) {
             StringBuilder sb = new StringBuilder(cutToSentence(str));
-            if (inventedNumbers(sb.toString())) {
-                sb.append("\n\nВнимание: в тексте есть числа, которых нет в разборе, — им доверять не стоит.");
-            }
             sb.append("\n\nЭто текст нейросети, а не вывод из баз: проверять по этикетке и по вкладке «Разбор».");
             this.aiBody.setText(sb.toString());
             return;
